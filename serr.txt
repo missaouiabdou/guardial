@@ -1,0 +1,1217 @@
+# GuardRail — Technical Review & Architecture Plan
+
+> **Date**: 2026-08-12  
+> **Scope**: Full codebase analysis of `guardrail-api`  
+> **Rails**: 8.1.3 | **Ruby**: 3.4 | **DB**: PostgreSQL
+
+---
+
+## 1. Current State Summary
+
+### ✅ What Is Already Done
+
+| Area | Status | Files |
+|------|--------|-------|
+| Rails API-only app | ✅ Running | [application.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/config/application.rb) |
+| PostgreSQL | ✅ Configured | [database.yml](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/config/database.yml) |
+| Devise + JWT auth | ✅ Working | [devise.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/config/initializers/devise.rb), [user.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/models/user.rb) |
+| User signup/login/logout | ✅ Tested | [sessions_controller.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/users/sessions_controller.rb), [registrations_controller.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/users/registrations_controller.rb) |
+| Projects CRUD | ✅ Scoped to user | [projects_controller.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/api/v1/projects_controller.rb) |
+| IDOR fix | ✅ `current_user.projects.find` | [projects_controller.rb#L41](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/api/v1/projects_controller.rb#L41) |
+| Centralized error handling | ✅ 404/400/422 | [application_controller.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/application_controller.rb) |
+| GitHub webhook endpoint | ✅ Basic structure | [github_controller.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/api/v1/webhooks/github_controller.rb) |
+| Webhook signature verification | ✅ HMAC-SHA256 | [signature_verifier.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/services/github/signature_verifier.rb) |
+| WebhookEvent model | ✅ Schema exists | [webhook_event.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/models/webhook_event.rb) |
+| Scan model | ✅ Schema exists | [scan.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/models/scan.rb) |
+| Custom error classes | ✅ 3 classes | `app/errors/github/` |
+| Value Object pattern | ✅ WebhookRequest | [webhook_request.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/services/github/webhook_request.rb) |
+| CI pipeline | ✅ Brakeman + RuboCop + tests | [ci.yml](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/.github/workflows/ci.yml) |
+| RSpec test suite | ✅ Auth + projects + errors | `spec/requests/` |
+| URL validator | ✅ Custom | [url_validator.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/validators/url_validator.rb) |
+| Dependabot | ✅ Weekly | [dependabot.yml](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/.github/dependabot.yml) |
+
+### ✅ What Is Technically Good
+
+1. **IDOR protection** — `current_user.projects.find(params[:id])` correctly scopes access
+2. **JWT revocation** — JTI Matcher strategy with per-user JTI
+3. **Webhook architecture** — Clean separation: Controller → WebhookRequest VO → Processor → Verifier/Checker/Recorder
+4. **Contract/interface pattern** — `Contracts::Recordable` and `Contracts::Verifiable` modules
+5. **Chain of Responsibility** — Validator chain (`BaseValidator` → `SignatureValidator`) is extensible
+6. **Idempotence index** — `[:project_id, :scan_id]` unique composite index on scans
+7. **Delivery deduplication** — `delivery_id` unique index on webhook_events
+8. **Secret management** — JWT secret requires credentials or env var, no fallback
+9. **Secure comparison** — `ActiveSupport::SecurityUtils.secure_compare` for timing-attack resistance
+10. **Parameter filtering** — Sensitive params (password, token, secret, key) are filtered from logs
+
+### ⚠️ What Is Risky or Incomplete
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| `DuplicateChecker` logic is **inverted** | 🔴 Critical | Returns early when `delivery_id` is blank instead of raising — allows duplicates through |
+| `raw_post_body` read **twice** in controller | 🔴 Critical | `raw_post_body` and `params_as_hash` each call `request.body.read` — second read returns `""` |
+| `active` column conflicts with `status` enum | 🟡 High | Both `status: :active` enum and `active` boolean column exist — confusing and error-prone |
+| Dead `password_digest` column on users | 🟡 High | Devise uses `encrypted_password`, this column is unused |
+| Dead `remember_created_at` column | 🟡 Medium | Rememberable module is not enabled, empty migration exists |
+| Dead `api_token` column on users | 🟡 Medium | JWT is used, this column is never populated |
+| Dead `JsonWebToken` lib class | 🟡 Medium | [JsonWebToken.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/lib/JsonWebToken.rb) is unused (Devise-JWT handles it now) |
+| Duplicate migration class name | 🟡 Medium | Two migrations both named `EnhanceProjects` — will fail on fresh `db:migrate` |
+| No pagination | 🟡 Medium | `GET /projects` returns all records |
+| No serializers | 🟡 Medium | `render json: @project` leaks all columns including `webhook_secret` |
+| No Sidekiq/async processing | 🟡 Medium | Webhooks are processed synchronously |
+| No rate limiting | 🟡 Medium | API and webhook endpoints are unprotected |
+| No webhook tests | 🟡 Medium | Zero specs for the entire webhook pipeline |
+| `webhook_secret` on Project is **not encrypted** | 🟡 Medium | Stored in plain text in DB |
+| CORS allows only `localhost:5173` | 🟢 Low | Fine for dev, but needs env-based config for production |
+| Nested `RSpec.configure` blocks | 🟢 Low | `FactoryBot::Syntax::Methods` included twice in [rails_helper.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/spec/rails_helper.rb) |
+| `jti` column allows NULL | 🟢 Low | Should be `null: false` for JWT revocation to work correctly |
+
+---
+
+## 2. What Must Be Changed Now
+
+### 2.1 🔴 Fix DuplicateChecker — Logic Is Inverted
+
+**Problem**: The guard clause returns early when `delivery_id` is *blank*, meaning it never checks for duplicates when a delivery ID is present.
+
+**File**: [duplicate_checker.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/services/github/duplicate_checker.rb)
+
+**Current (broken)**:
+```ruby
+def call(delivery_id)
+  return unless delivery_id.blank?  # ← BUG: returns when delivery_id IS blank
+                                     #   proceeds when it's NOT blank
+  if WebhookEvent.exists?(delivery_id: delivery_id)
+    raise DuplicateEventError, "Event #{delivery_id} already processed"
+  end
+end
+```
+
+**Fix**:
+```ruby
+def call(delivery_id)
+  return if delivery_id.blank?  # ← Skip check if no delivery_id
+
+  if WebhookEvent.exists?(delivery_id: delivery_id)
+    raise DuplicateEventError, "Event #{delivery_id} already processed"
+  end
+end
+```
+
+> [!CAUTION]
+> This bug means **every webhook with a valid `delivery_id` passes the duplicate check**, and webhooks **without** a delivery_id (which should be skipped) try to query `WebhookEvent.exists?(delivery_id: nil)`. This completely defeats idempotence.
+
+---
+
+### 2.2 🔴 Fix Double `request.body.read` in GithubController
+
+**Problem**: `raw_post_body` calls `request.body.rewind` + `request.body.read`, but `params_as_hash` calls `raw_post_body` **again**. After Rails parses params, `request.body` may behave differently. More critically, the body is read once for the `WebhookRequest.raw_body` and once independently for `params_as_hash`, which is wasteful and fragile.
+
+**File**: [github_controller.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/api/v1/webhooks/github_controller.rb)
+
+**Fix**: Read the body once and reuse it:
+
+```ruby
+private
+
+def webhook_request
+  @webhook_request ||= Github::WebhookRequest.new(
+    raw_body:    cached_raw_body,
+    signature:   request.headers["X-Hub-Signature-256"],
+    event_type:  request.headers["X-GitHub-Event"],
+    delivery_id: request.headers["X-GitHub-Delivery"],
+    payload:     parsed_payload
+  )
+end
+
+def cached_raw_body
+  @cached_raw_body ||= begin
+    request.body.rewind
+    request.body.read
+  end
+end
+
+def parsed_payload
+  @parsed_payload ||= begin
+    JSON.parse(cached_raw_body)
+  rescue JSON::ParserError
+    raise Github::InvalidPayloadError, "Invalid JSON payload"
+  end
+end
+```
+
+---
+
+### 2.3 🟡 Remove `active` Boolean Column — Conflicts with `status` Enum
+
+**Problem**: The `projects` table has both:
+- `status` integer enum (`active: 0`, `archived: 1`)
+- `active` boolean column (default: `true`)
+
+The model already uses `scope :active_projects` to avoid naming collisions, but this is confusing and the boolean is redundant.
+
+**Fix**: Create a migration to remove the `active` column:
+
+```ruby
+class RemoveActiveFromProjects < ActiveRecord::Migration[8.1]
+  def change
+    remove_column :projects, :active, :boolean, default: true
+  end
+end
+```
+
+---
+
+### 2.4 🟡 Remove Dead Columns from Users
+
+**Problem**: Three columns exist that serve no purpose:
+- `password_digest` — Devise uses `encrypted_password`
+- `remember_created_at` — Rememberable module is not enabled
+- `api_token` — JWT is used instead
+
+**Fix**:
+```ruby
+class CleanupUsersTable < ActiveRecord::Migration[8.1]
+  def change
+    remove_column :users, :password_digest, :string
+    remove_column :users, :remember_created_at, :datetime
+    remove_column :users, :api_token, :string
+    change_column_null :users, :jti, false  # Enforce NOT NULL for JWT revocation
+  end
+end
+```
+
+---
+
+### 2.5 🟡 Delete Dead `JsonWebToken` Lib
+
+**Problem**: [JsonWebToken.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/lib/JsonWebToken.rb) is a leftover from before Devise-JWT was integrated. It is never referenced anywhere.
+
+**Fix**: Delete the file:
+```
+lib/JsonWebToken.rb
+```
+
+---
+
+### 2.6 🟡 Fix Duplicate Migration Class Name
+
+**Problem**: Both [20260804101132_create_webhook_events.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/db/migrate/20260804101132_create_webhook_events.rb) and [20260811125223_enhance_projects.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/db/migrate/20260811125223_enhance_projects.rb) define `class EnhanceProjects`. Furthermore, `20260804101132` is named `create_webhook_events` in the filename but contains `EnhanceProjects` content — it appears the webhook_events table was created by a different mechanism or the file was overwritten.
+
+**Why it matters**: Running `rails db:migrate` from scratch on a fresh database will fail with `Multiple migrations have the name EnhanceProjects`.
+
+**Fix**: Rename the first migration's class or consolidate. Since the schema already exists, the safest approach:
+1. Rename the class in `20260804101132_create_webhook_events.rb` to `CreateWebhookEvents` and give it the correct `create_table :webhook_events` content
+2. OR squash migrations since the schema is already applied
+
+---
+
+### 2.7 🟡 Add Serializers — Prevent Leaking `webhook_secret`
+
+**Problem**: `render json: @project` dumps **all** columns, including `webhook_secret`.
+
+**Fix**: Add a serializer. Recommended gem: `blueprinter` (lightweight, no global state).
+
+Add to `Gemfile`:
+```ruby
+gem "blueprinter"
+```
+
+Create `app/blueprints/project_blueprint.rb`:
+```ruby
+class ProjectBlueprint < Blueprinter::Base
+  identifier :id
+
+  fields :name, :description, :repository_url, :status,
+         :default_branch, :github_repo, :created_at, :updated_at
+
+  view :with_stats do
+    field :vulnerability_stats
+    field :recent_scans do |project|
+      project.recent_scans(5).map { |s| ScanBlueprint.render_as_hash(s) }
+    end
+  end
+end
+```
+
+Then in the controller:
+```ruby
+render json: ProjectBlueprint.render(@project)
+```
+
+---
+
+### 2.8 🟡 Add Pagination
+
+**Fix**: Add `kaminari` or `pagy` (pagy is faster).
+
+Add to `Gemfile`:
+```ruby
+gem "pagy"
+```
+
+In `application_controller.rb`:
+```ruby
+include Pagy::Backend
+```
+
+In `projects_controller.rb`:
+```ruby
+def index
+  @pagy, @projects = pagy(current_user.projects, items: 20)
+  render json: {
+    projects: ProjectBlueprint.render_as_hash(@projects),
+    pagination: pagy_metadata(@pagy)
+  }
+end
+```
+
+---
+
+### 2.9 🟢 Clean Up rails_helper.rb
+
+**Problem**: `FactoryBot::Syntax::Methods` is included **twice** via nested `RSpec.configure` blocks.
+
+**File**: [rails_helper.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/spec/rails_helper.rb)
+
+**Fix**: Remove the duplicate nested block and keep a single clean configuration.
+
+---
+
+## 3. What Must Be Added Next
+
+### 3.1 Vulnerability Model
+
+The `Scan` model stores aggregate counts (`critical_count`, etc.), but individual vulnerabilities need their own table for LLM triage, manual override, and GitHub issue creation.
+
+```ruby
+# app/models/vulnerability.rb
+class Vulnerability < ApplicationRecord
+  belongs_to :scan
+  has_one :project, through: :scan
+  has_one :triage_result, dependent: :destroy
+
+  validates :external_id, presence: true, uniqueness: { scope: :scan_id }
+  validates :severity, presence: true, inclusion: { in: %w[critical high medium low info] }
+  validates :title, presence: true
+  validates :source_type, presence: true
+
+  enum :status, { open: 0, confirmed: 1, false_positive: 2, wont_fix: 3, fixed: 4 }
+
+  scope :critical, -> { where(severity: "critical") }
+  scope :actionable, -> { where(status: [:open, :confirmed]) }
+  scope :by_severity, -> { order(Arel.sql("CASE severity
+    WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+    WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END"))
+  }
+end
+```
+
+### 3.2 TriageResult Model (LLM + Manual Override)
+
+```ruby
+# app/models/triage_result.rb
+class TriageResult < ApplicationRecord
+  belongs_to :vulnerability
+  belongs_to :overridden_by, class_name: "User", optional: true
+
+  validates :classification, presence: true,
+    inclusion: { in: %w[true_positive false_positive needs_review] }
+  validates :source, presence: true, inclusion: { in: %w[llm manual] }
+
+  scope :llm_classified, -> { where(source: "llm") }
+  scope :manually_overridden, -> { where(source: "manual") }
+end
+```
+
+### 3.3 Normalizer Architecture
+
+Design a strategy pattern so each scanner has its own normalizer:
+
+```
+app/services/normalizers/
+├── base.rb                  # Abstract interface
+├── sonarqube_normalizer.rb  # SonarQube → standard format
+├── trivy_normalizer.rb      # Trivy → standard format
+└── github_normalizer.rb     # GitHub Actions → standard format
+```
+
+```ruby
+# app/services/normalizers/base.rb
+module Normalizers
+  class Base
+    def normalize(raw_payload)
+      raise NotImplementedError
+    end
+
+    # Returns: {
+    #   scan_id:, source_type:, commit_sha:, branch:,
+    #   author_name:, author_email:, commit_message:,
+    #   vulnerabilities: [{ external_id:, title:, severity:, ... }]
+    # }
+  end
+end
+```
+
+```ruby
+# app/services/normalizers/trivy_normalizer.rb
+module Normalizers
+  class TrivyNormalizer < Base
+    def normalize(raw_payload)
+      results = raw_payload.dig("Results") || []
+      vulns = results.flat_map do |result|
+        (result["Vulnerabilities"] || []).map do |v|
+          {
+            external_id:   v["VulnerabilityID"],
+            title:         v["Title"] || v["VulnerabilityID"],
+            severity:      v["Severity"]&.downcase,
+            description:   v["Description"],
+            file_path:     result["Target"],
+            cve_id:        v["VulnerabilityID"],
+            cvss_score:    v.dig("CVSS", "nvd", "V3Score"),
+            fix_available: v["FixedVersion"].present?,
+            fix_version:   v["FixedVersion"],
+            raw_data:      v
+          }
+        end
+      end
+      { vulnerabilities: vulns, source_type: "trivy" }
+    end
+  end
+end
+```
+
+### 3.4 Async Processing with Sidekiq (or Solid Queue)
+
+> [!NOTE]
+> Your project already includes `solid_queue` in the Gemfile. You can use it instead of Sidekiq to avoid adding Redis as a dependency. The job interface is identical via Active Job.
+
+```ruby
+# app/jobs/process_webhook_job.rb
+class ProcessWebhookJob < ApplicationJob
+  queue_as :webhooks
+
+  retry_on StandardError, wait: :polynomially_longer, attempts: 3
+  discard_on Github::DuplicateEventError
+
+  def perform(webhook_event_id)
+    event = WebhookEvent.find(webhook_event_id)
+    return if event.status == "processed"
+
+    event.update!(status: "processing")
+
+    # 1. Find or create project by repository
+    project = Project.find_by!(github_repo: event.repository)
+
+    # 2. Normalize payload
+    normalizer = Normalizers.for(event.source)
+    normalized = normalizer.normalize(event.payload)
+
+    # 3. Create scan (idempotent via unique index)
+    scan = project.scans.create!(
+      scan_id:     normalized[:scan_id] || event.delivery_id,
+      source_type: normalized[:source_type],
+      commit_sha:  normalized[:commit_sha],
+      branch:      normalized[:branch],
+      raw_payload: event.payload,
+      status:      "processing",
+      scanned_at:  Time.current
+    )
+
+    # 4. Create vulnerabilities
+    normalized[:vulnerabilities].each do |vuln_data|
+      scan.vulnerabilities.create!(vuln_data)
+    end
+
+    # 5. Update counts + mark complete
+    scan.complete!
+    event.mark_processed!(scan)
+
+  rescue => e
+    event&.mark_failed!(e)
+    raise  # Re-raise for retry mechanism
+  end
+end
+```
+
+Update the `EventRecorder` to enqueue the job:
+```ruby
+def call(event_type:, delivery_id:, repository:, payload:)
+  event = WebhookEvent.create!(
+    event_type:  event_type,
+    delivery_id: delivery_id,
+    repository:  repository,
+    payload:     payload,
+    status:      "pending"
+  )
+  ProcessWebhookJob.perform_later(event.id)  # ← Async!
+  event
+end
+```
+
+---
+
+## 4. Suggested Database Schema
+
+### 4.1 New Tables
+
+#### `vulnerabilities`
+```ruby
+class CreateVulnerabilities < ActiveRecord::Migration[8.1]
+  def change
+    create_table :vulnerabilities do |t|
+      t.references :scan, null: false, foreign_key: true
+
+      # Identification
+      t.string  :external_id, null: false     # CVE-2024-XXXX or tool-specific ID
+      t.string  :source_type, null: false     # sonarqube, trivy, etc.
+      t.string  :cve_id                       # CVE if applicable
+      t.string  :cwe_id                       # CWE-79, CWE-89, etc.
+
+      # Details
+      t.string  :title, null: false
+      t.text    :description
+      t.string  :severity, null: false        # critical, high, medium, low, info
+      t.float   :cvss_score
+
+      # Location
+      t.string  :file_path
+      t.integer :line_number
+      t.string  :component                    # package name, image, etc.
+      t.string  :component_version
+
+      # Fix info
+      t.boolean :fix_available, default: false
+      t.string  :fix_version
+      t.text    :remediation
+
+      # Status
+      t.integer :status, default: 0, null: false  # enum: open, confirmed, false_positive, wont_fix, fixed
+
+      # Raw data
+      t.jsonb   :raw_data, default: {}
+
+      # GitHub issue
+      t.string  :github_issue_url
+      t.integer :github_issue_number
+
+      t.timestamps
+    end
+
+    add_index :vulnerabilities, [:scan_id, :external_id], unique: true
+    add_index :vulnerabilities, :severity
+    add_index :vulnerabilities, :status
+    add_index :vulnerabilities, :cve_id
+    add_index :vulnerabilities, :file_path
+  end
+end
+```
+
+#### `triage_results`
+```ruby
+class CreateTriageResults < ActiveRecord::Migration[8.1]
+  def change
+    create_table :triage_results do |t|
+      t.references :vulnerability, null: false, foreign_key: true, index: { unique: true }
+
+      # LLM or manual classification
+      t.string  :classification, null: false  # true_positive, false_positive, needs_review
+      t.string  :source, null: false          # llm, manual
+      t.float   :confidence_score             # 0.0 - 1.0 (LLM confidence)
+      t.text    :reasoning                    # LLM explanation
+
+      # Manual override
+      t.references :overridden_by, foreign_key: { to_table: :users }, null: true
+      t.text    :override_reason
+      t.datetime :overridden_at
+
+      # LLM metadata
+      t.string  :model_name                   # e.g., "gemini-2.5-pro"
+      t.string  :model_version
+      t.integer :prompt_tokens
+      t.integer :completion_tokens
+      t.float   :cost_usd
+
+      t.timestamps
+    end
+
+    add_index :triage_results, :classification
+    add_index :triage_results, :source
+  end
+end
+```
+
+### 4.2 Complete ERD
+
+```mermaid
+erDiagram
+    USER ||--o{ PROJECT : owns
+    PROJECT ||--o{ SCAN : has
+    SCAN ||--o{ VULNERABILITY : contains
+    SCAN ||--o| WEBHOOK_EVENT : "created from"
+    VULNERABILITY ||--o| TRIAGE_RESULT : "classified by"
+    USER ||--o{ TRIAGE_RESULT : "overrides"
+
+    USER {
+        bigint id PK
+        string email UK
+        string encrypted_password
+        string jti UK
+    }
+
+    PROJECT {
+        bigint id PK
+        bigint user_id FK
+        string name
+        string repository_url
+        string github_repo UK
+        string webhook_secret
+        integer status
+        string default_branch
+    }
+
+    SCAN {
+        bigint id PK
+        bigint project_id FK
+        string scan_id
+        string source_type
+        string commit_sha
+        string branch
+        string status
+        jsonb raw_payload
+        jsonb parsed_data
+        integer critical_count
+        integer high_count
+        integer medium_count
+        integer low_count
+        integer info_count
+    }
+
+    VULNERABILITY {
+        bigint id PK
+        bigint scan_id FK
+        string external_id
+        string cve_id
+        string title
+        string severity
+        float cvss_score
+        string file_path
+        integer status
+        string github_issue_url
+        jsonb raw_data
+    }
+
+    TRIAGE_RESULT {
+        bigint id PK
+        bigint vulnerability_id FK
+        bigint overridden_by FK
+        string classification
+        string source
+        float confidence_score
+        text reasoning
+    }
+
+    WEBHOOK_EVENT {
+        bigint id PK
+        bigint scan_id FK
+        string delivery_id UK
+        string event_type
+        string repository
+        string source
+        jsonb payload
+        string status
+    }
+```
+
+---
+
+## 5. Webhook Architecture
+
+### 5.1 Recommended Endpoint Design
+
+```
+POST /api/v1/webhooks/github    ← GitHub push/PR events (existing)
+POST /api/v1/webhooks/scans     ← Generic scanner endpoint (new)
+```
+
+The generic `/scans` endpoint handles SonarQube, Trivy, and any future scanner via a `X-GuardRail-Source` header:
+
+```ruby
+# config/routes.rb
+namespace :webhooks do
+  post "github", to: "github#create"
+  post "scans",  to: "scans#create"   # Generic scanner webhook
+end
+```
+
+### 5.2 Request Flow
+
+```mermaid
+sequenceDiagram
+    participant CI as GitHub Actions / Scanner
+    participant API as Rails Controller
+    participant VO as WebhookRequest VO
+    participant SV as SignatureVerifier
+    participant DC as DuplicateChecker
+    participant ER as EventRecorder
+    participant Q as Solid Queue
+    participant JOB as ProcessWebhookJob
+    participant N as Normalizer
+
+    CI->>API: POST /api/v1/webhooks/scans
+    Note right of API: Read raw body ONCE
+    API->>VO: Build WebhookRequest
+    API->>SV: verify!(raw_body, signature)
+    SV-->>API: ✅ valid
+    API->>DC: check(delivery_id)
+    DC-->>API: ✅ not duplicate
+    API->>ER: record event
+    ER->>Q: ProcessWebhookJob.perform_later(event.id)
+    API-->>CI: 202 Accepted (< 100ms)
+
+    Note over Q,JOB: Async processing
+    Q->>JOB: perform(event_id)
+    JOB->>N: normalize(raw_payload)
+    N-->>JOB: structured data
+    JOB->>JOB: Create Scan + Vulnerabilities
+```
+
+### 5.3 Signature Verification for Generic Scanner
+
+For non-GitHub scanners, use a project-level webhook secret with HMAC-SHA256:
+
+```
+X-GuardRail-Signature: sha256=<hmac_hex_digest>
+X-GuardRail-Source: trivy
+X-GuardRail-Project: missaoui/guardrail-api
+X-GuardRail-Delivery: <uuid>
+```
+
+```ruby
+# app/controllers/api/v1/webhooks/scans_controller.rb
+module Api
+  module V1
+    module Webhooks
+      class ScansController < ApplicationController
+        skip_before_action :authenticate_user!, only: [:create]
+
+        def create
+          project = Project.find_by!(github_repo: request.headers["X-GuardRail-Project"])
+
+          verifier = Github::SignatureVerifier.new(secret: project.webhook_secret)
+          verifier.verify!(cached_raw_body, request.headers["X-GuardRail-Signature"])
+
+          # Dedup
+          delivery_id = request.headers["X-GuardRail-Delivery"] || Digest::SHA256.hexdigest(cached_raw_body)
+          Github::DuplicateChecker.new.call(delivery_id)
+
+          # Record + enqueue
+          event = WebhookEvent.create!(
+            source:      request.headers["X-GuardRail-Source"] || "unknown",
+            event_type:  "scan_result",
+            delivery_id: delivery_id,
+            repository:  project.github_repo,
+            payload:     parsed_payload,
+            status:      "pending"
+          )
+          ProcessWebhookJob.perform_later(event.id)
+
+          head :accepted
+        rescue ActiveRecord::RecordNotFound
+          render json: { error: "Project not found" }, status: :not_found
+        rescue Github::InvalidSignatureError => e
+          render json: { error: e.message }, status: :unauthorized
+        rescue Github::DuplicateEventError
+          head :ok
+        end
+
+        private
+
+        def cached_raw_body
+          @cached_raw_body ||= begin
+            request.body.rewind
+            request.body.read
+          end
+        end
+
+        def parsed_payload
+          @parsed_payload ||= JSON.parse(cached_raw_body)
+        rescue JSON::ParserError
+          raise Github::InvalidPayloadError, "Invalid JSON"
+        end
+      end
+    end
+  end
+end
+```
+
+### 5.4 Idempotence Strategy
+
+| Layer | Mechanism | Protection |
+|-------|-----------|------------|
+| HTTP | `X-GitHub-Delivery` / `X-GuardRail-Delivery` header | Unique per request |
+| Database | `webhook_events.delivery_id` unique index | DB-level dedup |
+| Application | `DuplicateChecker` service | App-level check before insert |
+| Scan | `scans[:project_id, :scan_id]` composite unique index | Prevents duplicate scan records |
+| Vulnerability | `vulnerabilities[:scan_id, :external_id]` composite unique | Prevents duplicate findings |
+
+### 5.5 Handling Duplicate Webhooks Safely
+
+When a duplicate is detected:
+- Return `200 OK` (not an error) — tells the sender "we got it, stop retrying"
+- Log the duplicate for observability
+- Do NOT create a new record
+
+---
+
+## 6. Security Review
+
+### 6.1 Authentication ✅ Mostly Good
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| Password hashing | ✅ | bcrypt via Devise, stretches=12 in production |
+| JWT secret | ✅ | Requires credentials or `DEVISE_JWT_SECRET_KEY` env var |
+| JWT revocation | ✅ | JTI Matcher strategy |
+| JWT expiration | ✅ | 1 day |
+| Session storage skipped | ✅ | `skip_session_storage: [:http_auth, :params_auth, :jwt_auth]` |
+
+> [!WARNING]
+> **Issue**: `jti` column allows NULL. If a user row has `jti: nil`, JWT revocation check will silently pass. Add `NOT NULL` constraint.
+
+### 6.2 Authorization ⚠️ Needs Work
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| IDOR on projects | ✅ | Scoped to `current_user.projects` |
+| Role-based access | ❌ | `User` has no `role` column despite factory traits (:admin, :developer, :viewer) |
+| Webhook auth | ✅ | HMAC signature verification |
+| Admin endpoints | N/A | None exist yet |
+
+**Recommendation**: Add a `role` enum to User when implementing dashboard/admin features. Consider using `pundit` for policy-based authorization.
+
+### 6.3 Mass Assignment ⚠️ One Issue
+
+**File**: [projects_controller.rb#L45](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/app/controllers/api/v1/projects_controller.rb#L45)
+
+```ruby
+def project_params
+  params.require(:project).permit(:name, :description, :repository_url, :status)
+end
+```
+
+> [!IMPORTANT]
+> `:status` is permitted. A user could set `status: 1` (archived) on create, or manipulate status freely. Consider removing `:status` from permitted params and adding a dedicated `archive`/`unarchive` action with authorization checks.
+
+### 6.4 Webhook Security ⚠️ Issues Found
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| HMAC-SHA256 signature | ✅ | Correct algorithm |
+| Timing-safe comparison | ✅ | `secure_compare` used |
+| Replay protection | ❌ | No timestamp checking — old signed payloads can be replayed |
+| Rate limiting | ❌ | No rate limiting on webhook endpoint |
+| Payload size limit | ❌ | No limit — potential DoS via large payloads |
+
+**Fix for replay protection**: Add timestamp validation:
+```ruby
+def verify_timestamp!(timestamp_header)
+  return if timestamp_header.blank?
+  timestamp = Time.parse(timestamp_header)
+  if (Time.current - timestamp).abs > 5.minutes
+    raise InvalidSignatureError, "Request timestamp too old"
+  end
+end
+```
+
+### 6.5 Secret Management ⚠️
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| JWT secret | ✅ | No fallback, requires real secret |
+| GitHub webhook secret | ✅ | ENV → credentials → auto-gen (dev only) |
+| Project webhook_secret | ⚠️ | **Stored in plain text** in DB |
+| DB password in database.yml | ⚠️ | Hardcoded `pass` for dev/test — fine for dev, but ensure production uses env vars |
+| Filter parameters | ✅ | `:secret`, `:token`, `:_key` are filtered |
+
+**Fix**: Encrypt `webhook_secret` using Rails encrypted attributes:
+```ruby
+# In Project model
+encrypts :webhook_secret, deterministic: false
+```
+
+### 6.6 Logging Sensitive Data ✅ Good
+
+Parameter filtering is configured in [filter_parameter_logging.rb](file:///c:/Users/missaoui.DESKTOP-4LNHLUC/RubymineProjects/guardrail-api/config/initializers/filter_parameter_logging.rb) with comprehensive patterns including `:passw`, `:secret`, `:token`, `:_key`.
+
+### 6.7 Rate Limiting ❌ Missing
+
+No rate limiting exists anywhere. Add `rack-attack`:
+
+```ruby
+# Gemfile
+gem "rack-attack"
+
+# config/initializers/rack_attack.rb
+Rack::Attack.throttle("api/login", limit: 5, period: 60) do |req|
+  req.ip if req.path == "/api/v1/login" && req.post?
+end
+
+Rack::Attack.throttle("webhooks", limit: 30, period: 60) do |req|
+  req.ip if req.path.start_with?("/api/v1/webhooks")
+end
+
+Rack::Attack.throttle("api/general", limit: 100, period: 60) do |req|
+  req.ip if req.path.start_with?("/api/")
+end
+```
+
+---
+
+## 7. Testing Plan
+
+### 7.1 Tests to Add
+
+#### Webhook Pipeline (Critical Priority)
+
+```ruby
+# spec/requests/api/v1/webhooks/github_spec.rb
+RSpec.describe "Api::V1::Webhooks::Github", type: :request do
+  let(:secret) { Rails.application.config.github_webhook_secret }
+  let(:payload) { { repository: { full_name: "org/repo" }, ref: "refs/heads/main" }.to_json }
+  let(:signature) { "sha256=" + OpenSSL::HMAC.hexdigest("sha256", secret, payload) }
+  let(:headers) do
+    {
+      "X-Hub-Signature-256" => signature,
+      "X-GitHub-Event" => "push",
+      "X-GitHub-Delivery" => SecureRandom.uuid,
+      "Content-Type" => "application/json"
+    }
+  end
+
+  describe "POST /api/v1/webhooks/github" do
+    it "returns 202 with valid signature" do
+      post "/api/v1/webhooks/github", params: payload, headers: headers
+      expect(response).to have_http_status(:accepted)
+    end
+
+    it "returns 401 with invalid signature" do
+      headers["X-Hub-Signature-256"] = "sha256=invalid"
+      post "/api/v1/webhooks/github", params: payload, headers: headers
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "returns 401 with missing signature" do
+      headers.delete("X-Hub-Signature-256")
+      post "/api/v1/webhooks/github", params: payload, headers: headers
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "creates a WebhookEvent record" do
+      expect {
+        post "/api/v1/webhooks/github", params: payload, headers: headers
+      }.to change(WebhookEvent, :count).by(1)
+    end
+
+    it "handles duplicate delivery_id idempotently" do
+      post "/api/v1/webhooks/github", params: payload, headers: headers
+      expect(response).to have_http_status(:accepted)
+
+      post "/api/v1/webhooks/github", params: payload, headers: headers
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "rejects empty payload" do
+      empty = ""
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("sha256", secret, empty)
+      headers["X-Hub-Signature-256"] = sig
+      post "/api/v1/webhooks/github", params: empty, headers: headers
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
+end
+```
+
+#### DuplicateChecker Service
+
+```ruby
+# spec/services/github/duplicate_checker_spec.rb
+RSpec.describe Github::DuplicateChecker do
+  subject(:checker) { described_class.new }
+
+  it "raises DuplicateEventError when delivery_id exists" do
+    WebhookEvent.create!(delivery_id: "abc-123", event_type: "push",
+                         repository: "org/repo", payload: {}, status: "pending")
+    expect { checker.call("abc-123") }.to raise_error(Github::DuplicateEventError)
+  end
+
+  it "does not raise when delivery_id is new" do
+    expect { checker.call("new-id") }.not_to raise_error
+  end
+
+  it "does not raise when delivery_id is blank" do
+    expect { checker.call(nil) }.not_to raise_error
+    expect { checker.call("") }.not_to raise_error
+  end
+end
+```
+
+#### SignatureVerifier Service
+
+```ruby
+# spec/services/github/signature_verifier_spec.rb
+RSpec.describe Github::SignatureVerifier do
+  let(:secret) { "test_secret_123" }
+  subject(:verifier) { described_class.new(secret: secret) }
+
+  it "passes with valid signature" do
+    body = '{"test": true}'
+    sig = "sha256=" + OpenSSL::HMAC.hexdigest("sha256", secret, body)
+    expect(verifier.verify!(body, sig)).to be true
+  end
+
+  it "raises with invalid signature" do
+    expect { verifier.verify!("body", "sha256=wrong") }
+      .to raise_error(Github::InvalidSignatureError, "Signature mismatch")
+  end
+
+  it "raises with missing signature" do
+    expect { verifier.verify!("body", nil) }
+      .to raise_error(Github::InvalidSignatureError, /Missing/)
+  end
+
+  it "raises with empty body" do
+    expect { verifier.verify!("", "sha256=x") }
+      .to raise_error(Github::InvalidSignatureError, /Empty/)
+  end
+end
+```
+
+#### Pagination
+
+```ruby
+# In spec/requests/api/v1/projects_spec.rb
+context "pagination" do
+  before { create_list(:project, 25, user: user) }
+
+  it "returns paginated results" do
+    get "/api/v1/projects", headers: headers
+    body = JSON.parse(response.body)
+    expect(body["projects"].size).to eq(20)
+    expect(body["pagination"]).to include("count", "page", "pages")
+  end
+
+  it "accepts page parameter" do
+    get "/api/v1/projects", params: { page: 2 }, headers: headers
+    body = JSON.parse(response.body)
+    # 25 total, 20 per page → page 2 has 5 + the 1 from let!(:project)
+    expect(body["projects"].size).to eq(6)
+  end
+end
+```
+
+#### Async Job (when implemented)
+
+```ruby
+# spec/jobs/process_webhook_job_spec.rb
+RSpec.describe ProcessWebhookJob, type: :job do
+  it "enqueues in the webhooks queue" do
+    expect { described_class.perform_later(1) }
+      .to have_enqueued_job.on_queue("webhooks")
+  end
+
+  it "processes a valid webhook event" do
+    event = create(:webhook_event, status: "pending")
+    described_class.perform_now(event.id)
+    expect(event.reload.status).to eq("processed")
+  end
+
+  it "marks event as failed on error" do
+    event = create(:webhook_event, status: "pending", repository: "nonexistent/repo")
+    expect { described_class.perform_now(event.id) }.to raise_error(ActiveRecord::RecordNotFound)
+    expect(event.reload.status).to eq("failed")
+  end
+end
+```
+
+#### Normalizers
+
+```ruby
+# spec/services/normalizers/trivy_normalizer_spec.rb
+RSpec.describe Normalizers::TrivyNormalizer do
+  let(:trivy_payload) do
+    {
+      "Results" => [{
+        "Target" => "Gemfile.lock",
+        "Vulnerabilities" => [{
+          "VulnerabilityID" => "CVE-2024-1234",
+          "Title" => "Critical RCE",
+          "Severity" => "CRITICAL",
+          "Description" => "Remote code execution",
+          "FixedVersion" => "1.2.3"
+        }]
+      }]
+    }
+  end
+
+  it "normalizes Trivy output to standard format" do
+    result = described_class.new.normalize(trivy_payload)
+    expect(result[:vulnerabilities].size).to eq(1)
+    expect(result[:vulnerabilities].first[:severity]).to eq("critical")
+    expect(result[:vulnerabilities].first[:external_id]).to eq("CVE-2024-1234")
+  end
+end
+```
+
+### 7.2 Summary of Test Coverage Needed
+
+| Area | Priority | Specs to Add |
+|------|----------|-------------|
+| Webhook endpoint (happy path + errors) | 🔴 Critical | 6+ specs |
+| DuplicateChecker (logic bug validation) | 🔴 Critical | 3 specs |
+| SignatureVerifier | 🟡 High | 4 specs |
+| Pagination | 🟡 High | 2 specs |
+| ProcessWebhookJob | 🟡 High | 3 specs |
+| Normalizers (Trivy, SonarQube) | 🟡 High | 4+ specs each |
+| Serializer output (no secret leaks) | 🟡 Medium | 2 specs |
+| Project model validations | 🟡 Medium | 5 specs |
+| Scan model lifecycle | 🟡 Medium | 4 specs |
+
+---
+
+## 8. Roadmap
+
+### Sprint 2: Cleanup + Webhook Stabilization (1 week)
+
+| # | Deliverable | Acceptance Criteria |
+|---|-------------|-------------------|
+| 1 | Fix `DuplicateChecker` bug | `return if` instead of `return unless`; spec passes |
+| 2 | Fix double `request.body.read` | Body read once and cached; webhook works end-to-end |
+| 3 | Remove dead columns + migration | `password_digest`, `remember_created_at`, `api_token` removed; `jti` NOT NULL |
+| 4 | Remove `active` boolean column | Only `status` enum remains |
+| 5 | Delete `lib/JsonWebToken.rb` | File deleted, no references exist |
+| 6 | Fix duplicate migration class | Fresh `db:migrate` works without errors |
+| 7 | Add serializers (Blueprinter) | `webhook_secret` never appears in API responses |
+| 8 | Add pagination (Pagy) | `GET /projects` returns paginated JSON with metadata |
+| 9 | Add `rack-attack` rate limiting | Login: 5/min, webhooks: 30/min, API: 100/min |
+| 10 | Add webhook specs | ≥8 request specs for the webhook pipeline |
+| 11 | Clean `rails_helper.rb` | No duplicate `RSpec.configure` blocks |
+
+---
+
+### Sprint 3: Async Processing + Normalizers (1.5 weeks)
+
+| # | Deliverable | Acceptance Criteria |
+|---|-------------|-------------------|
+| 1 | `ProcessWebhookJob` | Webhook events processed asynchronously via Solid Queue |
+| 2 | Controller returns 202 immediately | Response time < 100ms for webhook POST |
+| 3 | Normalizer base class | `Normalizers::Base` abstract class with `#normalize` interface |
+| 4 | Trivy normalizer | Converts Trivy JSON to standard vulnerability format |
+| 5 | SonarQube normalizer | Converts SonarQube webhook to standard format |
+| 6 | GitHub push normalizer | Extracts commit info from GitHub push events |
+| 7 | Generic `/webhooks/scans` endpoint | Works with X-GuardRail-* headers |
+| 8 | Per-project webhook secret verification | Scans endpoint verifies against `project.webhook_secret` |
+| 9 | Job retry + failure handling | Failed jobs retry 3x with backoff; events marked as failed |
+| 10 | Job specs | ≥5 specs covering happy path, failures, retries |
+| 11 | Normalizer specs | ≥4 specs per normalizer |
+
+---
+
+### Sprint 4: Vulnerabilities + LLM Triage (2 weeks)
+
+| # | Deliverable | Acceptance Criteria |
+|---|-------------|-------------------|
+| 1 | `Vulnerability` model + migration | Schema matches design above; indexed |
+| 2 | `TriageResult` model + migration | One-to-one with vulnerability; stores LLM + manual classifications |
+| 3 | Vulnerability CRUD API | `GET /projects/:id/vulnerabilities` with filters (severity, status) |
+| 4 | LLM triage service | Calls LLM API with vulnerability context; stores result |
+| 5 | LLM rate limiting + caching | Max 10 calls/min; cache identical findings |
+| 6 | Manual override endpoint | `PATCH /vulnerabilities/:id/triage` with authorization |
+| 7 | Scan completion updates counts | `scan.complete!` recalculates counts from actual vulnerabilities |
+| 8 | Encrypt `webhook_secret` | `encrypts :webhook_secret` in Project model |
+| 9 | Specs for triage | ≥6 specs: LLM mock, manual override, authorization |
+
+---
+
+### Sprint 5: Dashboard + Notifications (2 weeks)
+
+| # | Deliverable | Acceptance Criteria |
+|---|-------------|-------------------|
+| 1 | Dashboard API endpoints | `GET /dashboard/summary`, `/dashboard/trends`, `/dashboard/by_project` |
+| 2 | Vulnerability charts data | Aggregated by severity, project, and time |
+| 3 | Slack integration | Notifications on new scans and critical vulnerabilities |
+| 4 | GitHub issue creation | Automatic issue for critical CVEs with `fix_available: true` |
+| 5 | CORS env-based config | Dynamic origins based on `CORS_ORIGINS` env var |
+| 6 | Docker/docker-compose | Full dev stack: Rails + PostgreSQL + Redis (if needed) |
+| 7 | End-to-end integration test | CI pushes webhook → scan created → vulns normalized → Slack notified |
+
+---
+
+## 9. Priority List
+
+### 🔴 Critical — Fix Immediately
+
+1. **Fix `DuplicateChecker` inverted logic** — Allows duplicate webhook processing
+2. **Fix double `request.body.read`** — Second read returns empty string, corrupts payload parsing
+3. **Add serializers** — `webhook_secret` is exposed in API responses
+
+### 🟡 High — Fix This Sprint
+
+4. **Remove dead DB columns** — Technical debt that confuses the schema
+5. **Fix duplicate migration class name** — Blocks fresh database setup
+6. **Add `jti` NOT NULL constraint** — JWT revocation can be bypassed
+7. **Add webhook RSpec tests** — Zero test coverage for the entire webhook pipeline
+8. **Add pagination** — Unbounded queries will cause performance issues
+9. **Add `rack-attack` rate limiting** — All endpoints are unprotected
+10. **Remove `:status` from `project_params` permit** — Mass assignment risk
+
+### 🟠 Medium — Next Sprint
+
+11. Remove `active` boolean column conflict
+12. Delete `lib/JsonWebToken.rb`
+13. Implement async webhook processing (Solid Queue)
+14. Build Trivy + SonarQube normalizers
+15. Create `Vulnerability` and `TriageResult` models
+16. Encrypt `webhook_secret` column
+17. Add replay protection for webhooks
+
+### 🟢 Low — Later
+
+18. Clean `rails_helper.rb` duplicates
+19. Add `role` column to User for RBAC
+20. CORS environment-based configuration
+21. Docker/docker-compose setup
+22. Dashboard API endpoints
+23. Slack/GitHub integrations
+24. LLM triage service
+
+---
+
+## 10. Final Recommendation
+
+### Implement First: Critical Bug Fixes (Day 1)
+
+1. **Fix `DuplicateChecker`** — One character change (`unless` → `if`) that completely breaks idempotence
+2. **Fix double body read** — Cache `raw_body` once in the controller
+3. **Add serializers** — You are currently leaking `webhook_secret` to any authenticated user
+
+> [!CAUTION]
+> These three issues mean your webhook pipeline is **not production-safe**: duplicates pass through, payloads may be corrupted, and secrets are exposed. Fix them before any feature work.
+
+### Implement Second: Schema Cleanup + Test Coverage (Week 1)
+
+4. Clean up dead columns, fix duplicate migration
+5. Add comprehensive webhook specs (the entire pipeline has zero tests)
+6. Add pagination and rate limiting
+
+**Why**: You cannot safely build on top of an untested, schema-messy foundation. These changes reduce the blast radius of future changes and give you confidence when refactoring.
+
+### Implement Third: Async Processing + Normalizers (Week 2-3)
+
+7. `ProcessWebhookJob` + Solid Queue integration
+8. Trivy and SonarQube normalizers
+9. `Vulnerability` model
+
+**Why**: This is the core value proposition of GuardRail. Once webhooks are stable and tested, building the scan processing pipeline is the most impactful feature work. The normalizer architecture enables you to add new scanners without changing existing code (Open/Closed Principle).
+
+> [!TIP]
+> You already have `solid_queue` in your Gemfile and configured in production. Use it instead of adding Sidekiq — it avoids the Redis dependency and works with Active Job's standard interface. Your `ProcessWebhookJob` will work identically with both backends.
