@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GuardiaLab - Security Vulnerability Playground</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-primary: #0b0f19;
+            --bg-secondary: #131a2b;
+            --bg-glass: rgba(19, 26, 43, 0.8);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --accent-glow: rgba(0, 242, 254, 0.15);
+            --accent-cyan: #00f2fe;
+            --accent-purple: #9b51e0;
+            --accent-green: #00e676;
+            --accent-red: #ff3366;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --font-main: 'Plus Jakarta Sans', sans-serif;
+            --font-mono: 'Fira Code', monospace;
+            --sidebar-width: 280px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            overflow-x: hidden;
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Sidebar styling */
+        aside {
+            width: var(--sidebar-width);
+            background-color: var(--bg-secondary);
+            border-right: 1px solid var(--border-glass);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            left: 0;
+            top: 0;
+            z-index: 10;
+        }
+
+        .logo-container {
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .logo-icon {
+            font-size: 24px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-title {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #fff, var(--text-muted));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-badge {
+            background: rgba(255, 51, 102, 0.15);
+            color: var(--accent-red);
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 51, 102, 0.3);
+            text-transform: uppercase;
+        }
+
+        .nav-list {
+            list-style: none;
+            padding: 16px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .nav-item:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .nav-item.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 242, 254, 0.08);
+            box-shadow: inset 0 0 0 1px rgba(0, 242, 254, 0.15);
+        }
+
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 15%;
+            height: 70%;
+            width: 3px;
+            background: var(--accent-cyan);
+            border-radius: 0 4px 4px 0;
+            box-shadow: 0 0 8px var(--accent-cyan);
+        }
+
+        .nav-item i {
+            width: 18px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .sidebar-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-glass);
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.3);
+            text-align: center;
+        }
+
+        /* Main content styling */
+        main {
+            margin-left: var(--sidebar-width);
+            flex-grow: 1;
+            padding: 40px;
+            max-width: 1400px;
+            width: calc(100% - var(--sidebar-width));
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .header-title-area h1 {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(120deg, #ffffff 40%, var(--text-muted));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-title-area p {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .status-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 12px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .pulse-indicator {
+            width: 10px;
+            height: 10px;
+            background: var(--accent-red);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-red);
+            animation: pulse 1.8s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 12px var(--accent-red); }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        .status-text {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        /* Glass Cards */
+        .glass-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 16px;
+            padding: 30px;
+            backdrop-filter: blur(12px);
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 0% 0%, var(--accent-glow) 0%, transparent 60%);
+            pointer-events: none;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            position: relative;
+        }
+
+        .section-badge {
+            background: rgba(0, 242, 254, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(0, 242, 254, 0.2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .section-title h2 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .section-description {
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        /* Playground form UI */
+        .playground-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .playground-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .action-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+        }
+
+        .input-wrapper i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }
+
+        .text-input {
+            width: 100%;
+            padding: 12px 16px 12px 42px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
+            border-radius: 8px;
+            color: #fff;
+            font-family: var(--font-main);
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .text-input:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 10px rgba(0, 242, 254, 0.15);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            color: #0b0f19;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px rgba(0, 242, 254, 0.2);
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 242, 254, 0.35);
+            filter: brightness(1.1);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Console Output */
+        .console-wrapper {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .console-header {
+            background: #080c14;
+            border: 1px solid var(--border-glass);
+            border-bottom: none;
+            padding: 10px 16px;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .console-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .console-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .console-dot:nth-child(1) { background: #ff5f56; }
+        .console-dot:nth-child(2) { background: #ffbd2e; }
+        .console-dot:nth-child(3) { background: #27c93f; }
+
+        .console-screen {
+            background: #080c14;
+            border: 1px solid var(--border-glass);
+            border-radius: 0 0 8px 8px;
+            padding: 18px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--accent-green);
+            flex-grow: 1;
+            max-height: 320px;
+            overflow-y: auto;
+            position: relative;
+            white-space: pre-wrap;
+        }
+
+        .console-screen.error {
+            color: var(--accent-red);
+        }
+
+        .console-screen::before {
+            content: '$ ';
+            color: var(--text-muted);
+        }
+
+        .console-placeholder {
+            color: rgba(255, 255, 255, 0.15);
+            font-style: italic;
+        }
+        .console-placeholder::before {
+            content: '';
+        }
+
+        /* Code Viewer Section */
+        .code-container {
+            margin-top: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .code-tabs {
+            display: flex;
+            gap: 12px;
+            border-bottom: 1px solid var(--border-glass);
+            padding-bottom: 8px;
+        }
+
+        .code-tab {
+            padding: 8px 16px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            border-radius: 6px;
+        }
+
+        .code-tab:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .code-tab.active {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .code-tab.active.vuln-tab {
+            box-shadow: inset 0 -2px 0 var(--accent-red);
+            color: var(--accent-red);
+            background: rgba(255, 51, 102, 0.05);
+        }
+
+        .code-tab.active.secure-tab {
+            box-shadow: inset 0 -2px 0 var(--accent-green);
+            color: var(--accent-green);
+            background: rgba(0, 230, 118, 0.05);
+        }
+
+        .code-viewport {
+            background: #080c14;
+            border: 1px solid var(--border-glass);
+            border-radius: 8px;
+            padding: 20px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.6;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .code-viewport code {
+            display: block;
+            white-space: pre;
+        }
+
+        .comment-highlight { color: #6272a4; font-style: italic; }
+        .keyword-highlight { color: #ff79c6; font-weight: bold; }
+        .string-highlight { color: #f1fa8c; }
+        .variable-highlight { color: #8be9fd; }
+        .method-highlight { color: #50fa7b; }
+
+        /* Remediation section */
+        .remediation-section {
+            margin-top: 30px;
+            background: rgba(0, 230, 118, 0.03);
+            border: 1px dashed rgba(0, 230, 118, 0.2);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .remediation-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--accent-green);
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 12px;
+        }
+
+        .remediation-header i {
+            font-size: 18px;
+        }
+
+        .remediation-list {
+            list-style-type: none;
+            padding-left: 0;
+            color: var(--text-muted);
+            font-size: 14px;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .remediation-list li {
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .remediation-list li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--accent-green);
+            font-weight: bold;
+        }
+
+        /* Guestbook specific styles */
+        .comment-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-glass);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .comment-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .comment-body {
+            font-size: 13px;
+        }
+
+        .comments-list-box {
+            max-height: 240px;
+            overflow-y: auto;
+            border: 1px solid var(--border-glass);
+            border-radius: 8px;
+            padding: 12px;
+            background: #080c14;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <aside>
+        <div class="logo-container">
+            <i class="fa-solid fa-shield-halved logo-icon"></i>
+            <span class="logo-title">GuardiaLab</span>
+            <span class="logo-badge">Vuln</span>
+        </div>
+        <ul class="nav-list">
+            <li class="nav-item active" onclick="switchTab('sqli')" data-vuln="sqli">
+                <i class="fa-solid fa-database"></i> SQL Injection
+            </li>
+            <li class="nav-item" onclick="switchTab('rce')" data-vuln="rce">
+                <i class="fa-solid fa-terminal"></i> Command Injection
+            </li>
+            <li class="nav-item" onclick="switchTab('lfi')" data-vuln="lfi">
+                <i class="fa-solid fa-folder-open"></i> Path Traversal
+            </li>
+            <li class="nav-item" onclick="switchTab('deserialize')" data-vuln="deserialize">
+                <i class="fa-solid fa-box-open"></i> Deserialization
+            </li>
+            <li class="nav-item" onclick="switchTab('mass_assignment')" data-vuln="mass_assignment">
+                <i class="fa-solid fa-user-pen"></i> Mass Assignment
+            </li>
+            <li class="nav-item" onclick="switchTab('secrets')" data-vuln="secrets">
+                <i class="fa-solid fa-key"></i> Hardcoded Secrets
+            </li>
+            <li class="nav-item" onclick="switchTab('xss')" data-vuln="xss">
+                <i class="fa-solid fa-code"></i> Cross-Site Scripting
+            </li>
+            <li class="nav-item" onclick="switchTab('ssrf')" data-vuln="ssrf">
+                <i class="fa-solid fa-network-wired"></i> SSRF
+            </li>
+            <li class="nav-item" onclick="switchTab('ssti')" data-vuln="ssti">
+                <i class="fa-solid fa-cubes"></i> SSTI (Template)
+            </li>
+            <li class="nav-item" onclick="switchTab('idor')" data-vuln="idor">
+                <i class="fa-solid fa-unlock-keyhole"></i> IDOR
+            </li>
+        </ul>
+        <div class="sidebar-footer">
+            v1.0.0 • Local Env Only
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main>
+        <header>
+            <div class="header-title-area">
+                <h1>Vulnerability Sandbox</h1>
+                <p>Interact with real vulnerabilities, read the underlying code, and learn how to remediate them.</p>
+            </div>
+            <div class="status-card">
+                <div class="pulse-indicator"></div>
+                <div class="status-text">Sandbox: Vulnerable Mode</div>
+            </div>
+        </header>
+
+        <!-- Dynamic Content Card -->
+        <div class="glass-card" id="vuln-workspace">
+            <!-- Dynamic Content populated by Javascript -->
+        </div>
+    </main>
+
+    <script>
+        // Vulnerabilities Data Store
+        const vulns = {
+            sqli: {
+                title: "SQL Injection (SQLi)",
+                badge: "CWE-89",
+                description: "SQL Injection occurs when user-supplied input is directly interpolated or concatenated into a database query string, allowing an attacker to manipulate the structure of the query and execute arbitrary SQL commands.",
+                inputLabel: "Search Products",
+                inputPlaceholder: "Enter search keyword (e.g. Shield' OR '1'='1)",
+                defaultValue: "Shield' OR '1'='1",
+                icon: "fa-database",
+                buttonText: "Query Database",
+                apiPath: (val) => `/api/v1/vulnerabilities/sqli?query=${encodeURIComponent(val)}`,
+                apiMethod: "GET",
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">sqli</span>
+  <span class="variable-highlight">query</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:query</span>]
+  <span class="comment-highlight"># BUG: Interpolating parameters directly into raw SQL string</span>
+  <span class="variable-highlight">sql</span> = <span class="string-highlight">"SELECT * FROM products WHERE name LIKE '%</span><span class="variable-highlight">#{query}</span><span class="string-highlight">%'"</span>
+  <span class="variable-highlight">@products</span> = <span class="variable-highlight">Product</span>.connection.select_all(<span class="variable-highlight">sql</span>)
+  render <span class="string-highlight">json:</span> <span class="variable-highlight">@products</span>
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">sqli</span>
+  <span class="variable-highlight">query</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:query</span>]
+  <span class="comment-highlight"># SECURE: Use ActiveRecord parameterized querying</span>
+  <span class="variable-highlight">@products</span> = <span class="variable-highlight">Product</span>.where(<span class="string-highlight">"name LIKE ?"</span>, <span class="string-highlight">"%</span><span class="variable-highlight">#{query}</span><span class="string-highlight">%"</span>)
+  render <span class="string-highlight">json:</span> <span class="variable-highlight">@products</span>
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Never concatenate user input directly into SQL strings.",
+                    "Use ActiveRecord's built-in parameter bindings (e.g. where('name = ?', name) or where(name: name)).",
+                    "If writing complex raw SQL, always sanitize inputs using ActiveRecord::Base.sanitize_sql_like."
+                ]
+            },
+            rce: {
+                title: "Command Injection (RCE)",
+                badge: "CWE-78",
+                description: "Remote Command Execution happens when user-supplied inputs are passed directly to system shells (e.g., system, backticks, exec) without sanitization, letting attackers run arbitrary operating system commands.",
+                inputLabel: "Ping Target Host/IP",
+                inputPlaceholder: "Enter IP address (e.g. 127.0.0.1 & dir)",
+                defaultValue: "127.0.0.1 & dir",
+                icon: "fa-terminal",
+                buttonText: "Ping IP",
+                apiPath: (val) => `/api/v1/vulnerabilities/rce`,
+                apiMethod: "POST",
+                postData: (val) => JSON.stringify({ ip: val }),
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">rce</span>
+  <span class="variable-highlight">ip</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:ip</span>]
+  <span class="comment-highlight"># BUG: Executing system shell command using backticks with raw input</span>
+  <span class="variable-highlight">output</span> = \`ping -n 1 <span class="variable-highlight">#{ip}</span>\`
+  render <span class="string-highlight">json:</span> { <span class="string-highlight">output:</span> <span class="variable-highlight">output</span> }
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">require</span> <span class="string-highlight">'open3'</span>
+
+<span class="keyword-highlight">def</span> <span class="method-highlight">rce</span>
+  <span class="variable-highlight">ip</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:ip</span>]
+  <span class="comment-highlight"># SECURE: Validate format using regex</span>
+  <span class="keyword-highlight">raise</span> <span class="string-highlight">"Invalid IP"</span> <span class="keyword-highlight">unless</span> <span class="variable-highlight">ip</span> =~ <span class="string-highlight">/\\A\\d{1,3}(\\.\\d{1,3}){3}\\z/</span>
+  
+  <span class="comment-highlight"># SECURE: Execute system command using argument array bypasses shell interpretation</span>
+  <span class="variable-highlight">stdout</span>, <span class="variable-highlight">status</span> = <span class="variable-highlight">Open3</span>.capture2(<span class="string-highlight">"ping"</span>, <span class="string-highlight">"-n"</span>, <span class="string-highlight">"1"</span>, <span class="variable-highlight">ip</span>)
+  render <span class="string-highlight">json:</span> { <span class="string-highlight">output:</span> <span class="variable-highlight">stdout</span> }
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Avoid executing operating system commands using user-controlled inputs.",
+                    "If OS commands are required, use API wrappers or standard library functions instead of shell wrappers.",
+                    "If commands must run, pass inputs as separate array arguments rather than a single string (avoids spawning shell subprocess).",
+                    "Strictly validate inputs using a strict whitelist regex (e.g. only IPv4 address digits)."
+                ]
+            },
+            lfi: {
+                title: "Path Traversal / Local File Inclusion",
+                badge: "CWE-22",
+                description: "Path Traversal allows an attacker to access files outside the intended root directory by submitting parameters containing parent directory paths (e.g. '../../').",
+                inputLabel: "Retrieve Public File",
+                inputPlaceholder: "Enter filename (e.g. ../../config/database.yml)",
+                defaultValue: "../../config/database.yml",
+                icon: "fa-folder-open",
+                buttonText: "Load File Content",
+                apiPath: (val) => `/api/v1/vulnerabilities/lfi?file=${encodeURIComponent(val)}`,
+                apiMethod: "GET",
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">lfi</span>
+  <span class="variable-highlight">file</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:file</span>]
+  <span class="comment-highlight"># BUG: Appending user input to root folder directly</span>
+  <span class="variable-highlight">file_path</span> = <span class="variable-highlight">Rails</span>.root.join(<span class="string-highlight">"public"</span>, <span class="variable-highlight">file</span>)
+  render <span class="string-highlight">plain:</span> <span class="variable-highlight">File</span>.read(<span class="variable-highlight">file_path</span>)
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">lfi</span>
+  <span class="variable-highlight">file</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:file</span>]
+  <span class="variable-highlight">base_dir</span> = <span class="variable-highlight">Rails</span>.root.join(<span class="string-highlight">"public"</span>).to_s
+  
+  <span class="comment-highlight"># SECURE: Resolve target absolute path</span>
+  <span class="variable-highlight">target_path</span> = <span class="variable-highlight">File</span>.expand_path(<span class="variable-highlight">file</span>, <span class="variable-highlight">base_dir</span>)
+  
+  <span class="comment-highlight"># SECURE: Verify resolved path remains inside the base directory sandbox</span>
+  <span class="keyword-highlight">if</span> <span class="variable-highlight">target_path</span>.start_with?(<span class="variable-highlight">base_dir</span>) && <span class="variable-highlight">File</span>.exist?(<span class="variable-highlight">target_path</span>)
+    render <span class="string-highlight">plain:</span> <span class="variable-highlight">File</span>.read(<span class="variable-highlight">target_path</span>)
+  <span class="keyword-highlight">else</span>
+    render <span class="string-highlight">json:</span> { <span class="string-highlight">error:</span> <span class="string-highlight">"Forbidden"</span> }, <span class="string-highlight">status:</span> <span class="string-highlight">:forbidden</span>
+  <span class="keyword-highlight">end</span>
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Never read files directly based on arbitrary parameters.",
+                    "Use a predefined whitelist of files the user is permitted to request.",
+                    "Normalize the path using File.expand_path and verify it starts with your sandbox directory (e.g. Rails.root.join('public')).",
+                    "Prefer referencing files via indirect IDs (e.g., file index numbers) mapped in a database database table."
+                ]
+            },
+            deserialize: {
+                title: "Insecure Deserialization",
+                badge: "CWE-502",
+                description: "Deserializing untrusted data with Marshal.load allows attackers to craft serialized objects containing system commands, executing them instantly when parsed (RCE).",
+                inputLabel: "Submit Base64 Serialized Payload",
+                inputPlaceholder: "Enter Base64 serialized string",
+                defaultValue: "BAh7BkkiCmhlbGxvBjoGRVRJIgp3b3JsZAY7BkVU", // Base64 of Marshal.dump({"hello" => "world"})
+                icon: "fa-box-open",
+                buttonText: "Deserialize Payload",
+                apiPath: (val) => `/api/v1/vulnerabilities/deserialize`,
+                apiMethod: "POST",
+                postData: (val) => JSON.stringify({ payload: val }),
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">deserialize</span>
+  <span class="variable-highlight">payload</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:payload</span>]
+  <span class="variable-highlight">decoded</span> = <span class="variable-highlight">Base64</span>.decode64(<span class="variable-highlight">payload</span>)
+  <span class="comment-highlight"># BUG: Deserializing user-supplied input using Marshal</span>
+  <span class="variable-highlight">obj</span> = <span class="variable-highlight">Marshal</span>.load(<span class="variable-highlight">decoded</span>)
+  render <span class="string-highlight">json:</span> { <span class="string-highlight">status:</span> <span class="string-highlight">"success"</span>, <span class="string-highlight">class:</span> <span class="variable-highlight">obj</span>.class.name }
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">require</span> <span class="string-highlight">'json'</span>
+
+<span class="keyword-highlight">def</span> <span class="method-highlight">deserialize</span>
+  <span class="variable-highlight">payload</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:payload</span>]
+  <span class="comment-highlight"># SECURE: Use JSON parser instead of Marshal.load</span>
+  <span class="variable-highlight">obj</span> = <span class="variable-highlight">JSON</span>.parse(<span class="variable-highlight">payload</span>)
+  render <span class="string-highlight">json:</span> { <span class="string-highlight">status:</span> <span class="string-highlight">"success"</span>, <span class="string-highlight">class:</span> <span class="variable-highlight">obj</span>.class.name }
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Avoid using Ruby Marshal or YAML.load on untrusted client inputs.",
+                    "If storing structured state client-side, prefer using JSON with JSON.parse.",
+                    "If YAML is required, strictly use YAML.safe_load instead of load.",
+                    "For highly sensitive storage, sign or encrypt the serialized data using ActiveSupport::MessageEncryptor."
+                ]
+            },
+            mass_assignment: {
+                title: "Mass Assignment / Privilege Escalation",
+                badge: "CWE-915",
+                description: "Mass Assignment allows users to pass parameters to Active Record models directly, bypassing filters. An attacker can set columns they shouldn't change, like 'admin=true'.",
+                inputLabel: "Create User Parameters (JSON)",
+                inputPlaceholder: '{"user": {"username": "hacker", "password": "password123", "admin": true}}',
+                defaultValue: '{\n  "user": {\n    "username": "hacker",\n    "password": "password123",\n    "admin": true\n  }\n}',
+                icon: "fa-user-pen",
+                buttonText: "Create Account",
+                apiPath: (val) => `/api/v1/vulnerabilities/users`,
+                apiMethod: "POST",
+                postData: (val) => val,
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">create_user</span>
+  <span class="comment-highlight"># BUG: permit! allows all attributes, bypassing strong parameters protection</span>
+  <span class="variable-highlight">user_params</span> = <span class="variable-highlight">params</span>.require(<span class="string-highlight">:user</span>).permit!
+  <span class="variable-highlight">@user</span> = <span class="variable-highlight">User</span>.new(<span class="variable-highlight">user_params</span>)
+  <span class="variable-highlight">@user</span>.save
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">create_user</span>
+  <span class="comment-highlight"># SECURE: Explicitly permit only safe, non-privilege attributes</span>
+  <span class="variable-highlight">user_params</span> = <span class="variable-highlight">params</span>.require(<span class="string-highlight">:user</span>).permit(<span class="string-highlight">:username</span>, <span class="string-highlight">:password</span>)
+  <span class="variable-highlight">@user</span> = <span class="variable-highlight">User</span>.new(<span class="variable-highlight">user_params</span>)
+  <span class="variable-highlight">@user</span>.save
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Never call permit! on user parameters unless the schema contains absolutely no sensitive columns.",
+                    "Explicitly define allowed keys using strong parameters (.permit(:username, :email)).",
+                    "Do not permit attributes governing privileges, status, or balances (.permit(:admin, :role, :balance) is extremely risky)."
+                ]
+            },
+            secrets: {
+                title: "Hardcoded Credentials / Secrets",
+                badge: "CWE-798",
+                description: "Storing sensitive keys, passwords, or tokens in cleartext source files allows any developer, scanner, or attacker with repository access to immediately hijack external systems.",
+                inputLabel: "Retrieve Configuration Secrets",
+                inputPlaceholder: "Click button to query config parameters...",
+                defaultValue: "Request config",
+                icon: "fa-key",
+                buttonText: "Fetch Credentials",
+                apiPath: (val) => `/api/v1/vulnerabilities/secrets`,
+                apiMethod: "GET",
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">secrets</span>
+  <span class="comment-highlight"># BUG: Storing hardcoded third-party API secret tokens in code</span>
+  <span class="variable-highlight">aws_key_id</span> = <span class="string-highlight">"AKIAIOSFODNN7INVALIDKEY"</span>
+  <span class="variable-highlight">aws_secret_key</span> = <span class="string-highlight">"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"</span>
+  render <span class="string-highlight">json:</span> { <span class="string-highlight">key:</span> <span class="variable-highlight">aws_secret_key</span> }
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">secrets</span>
+  <span class="comment-highlight"># SECURE: Retrieve keys from environment variables or encrypted Rails credentials</span>
+  <span class="variable-highlight">aws_key_id</span> = <span class="variable-highlight">ENV</span>[<span class="string-highlight">'AWS_ACCESS_KEY_ID'</span>]
+  <span class="variable-highlight">aws_secret_key</span> = <span class="variable-highlight">Rails</span>.application.credentials.dig(<span class="string-highlight">:aws</span>, <span class="string-highlight">:secret_access_key</span>)
+  render <span class="string-highlight">json:</span> { <span class="string-highlight">key_length:</span> <span class="variable-highlight">aws_secret_key</span>&.length || 0 }
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Never commit credentials, access keys, or API tokens to source control.",
+                    "Use environment variables (ENV['API_KEY']) or local .env files (ignored by .gitignore).",
+                    "Leverage Rails' built-in credentials management (rails credentials:edit) to encrypt secrets.",
+                    "Integrate automated pre-commit scanning tools (like git-secrets or TruffleHog) to prevent leaks."
+                ]
+            },
+            xss: {
+                title: "Cross-Site Scripting (XSS)",
+                badge: "CWE-79",
+                description: "Cross-Site Scripting occurs when an application includes untrusted data in a web page without proper escaping, enabling execution of malicious javascript in the user's browser context.",
+                isXSSDemo: true, // Special UI for comment board
+                icon: "fa-code",
+                remediation: [
+                    "Always escape user inputs dynamically rendered in DOM trees.",
+                    "In frontend frameworks, use textContent or safe text rendering variables (e.g. innerText) instead of innerHTML.",
+                    "In Rails views, avoid calling html_safe or raw on arbitrary inputs."
+                ]
+            },
+            ssrf: {
+                title: "Server-Side Request Forgery (SSRF)",
+                badge: "CWE-918",
+                description: "SSRF occurs when a web server fetches a remote resource without validating the user-supplied URL. Attackers can force the server to connect to internal-only systems (e.g., localhost or cloud metadata services).",
+                inputLabel: "Remote Resource URL",
+                inputPlaceholder: "Enter target URL (e.g. http://127.0.0.1:3000/api/v1/vulnerabilities/secrets)",
+                defaultValue: "http://127.0.0.1:3000/api/v1/vulnerabilities/secrets",
+                icon: "fa-network-wired",
+                buttonText: "Fetch URL",
+                apiPath: (val) => `/api/v1/vulnerabilities/ssrf?url=${encodeURIComponent(val)}`,
+                apiMethod: "GET",
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">ssrf</span>
+  <span class="variable-highlight">url_str</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:url</span>]
+  <span class="variable-highlight">uri</span> = <span class="variable-highlight">URI</span>(<span class="variable-highlight">url_str</span>)
+  <span class="comment-highlight"># BUG: Fetches any user-supplied URL directly, exposing internal network</span>
+  <span class="variable-highlight">response</span> = <span class="variable-highlight">Net</span>::<span class="variable-highlight">HTTP</span>.get_response(<span class="variable-highlight">uri</span>)
+  render <span class="string-highlight">json:</span> { <span class="string-highlight">status:</span> <span class="variable-highlight">response</span>.code, <span class="string-highlight">body:</span> <span class="variable-highlight">response</span>.body }
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">ssrf</span>
+  <span class="variable-highlight">url_str</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:url</span>]
+  <span class="variable-highlight">uri</span> = <span class="variable-highlight">URI</span>(<span class="variable-highlight">url_str</span>)
+  
+  <span class="comment-highlight"># SECURE: strictly restrict targets using a whitelist domain list</span>
+  <span class="variable-highlight">allowed_hosts</span> = [<span class="string-highlight">'api.github.com'</span>, <span class="string-highlight">'api.stripe.com'</span>]
+  <span class="keyword-highlight">if</span> <span class="variable-highlight">allowed_hosts</span>.include?(<span class="variable-highlight">uri</span>.host)
+    <span class="variable-highlight">response</span> = <span class="variable-highlight">Net</span>::<span class="variable-highlight">HTTP</span>.get_response(<span class="variable-highlight">uri</span>)
+    render <span class="string-highlight">json:</span> { <span class="string-highlight">body:</span> <span class="variable-highlight">response</span>.body }
+  <span class="keyword-highlight">else</span>
+    render <span class="string-highlight">json:</span> { <span class="string-highlight">error:</span> <span class="string-highlight">"Forbidden host"</span> }, <span class="string-highlight">status:</span> <span class="string-highlight">:forbidden</span>
+  <span class="keyword-highlight">end</span>
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Implement URL and host domain whitelisting for outgoing requests.",
+                    "Verify resolved IP addresses to block connections to private / loopback IP spaces (RFC 1918: 127.0.0.1, 10.0.0.0/8, 192.168.0.0/16).",
+                    "Do not allow raw protocol schemes like file:// or gopher://; strictly enforce https://."
+                ]
+            },
+            ssti: {
+                title: "Server-Side Template Injection (SSTI)",
+                badge: "CWE-1336",
+                description: "SSTI occurs when user inputs are dynamically concatenated directly into a template format string before compilation, allowing attackers to evaluate code inside the templating framework's sandbox.",
+                inputLabel: "Your Name",
+                inputPlaceholder: "Enter template input (e.g. <%= Dir.entries('.') %> or <%= 7*7 %>)",
+                defaultValue: "<%= 7*7 %>",
+                icon: "fa-cubes",
+                buttonText: "Render Template",
+                apiPath: (val) => `/api/v1/vulnerabilities/ssti?name=${encodeURIComponent(val)}`,
+                apiMethod: "GET",
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">ssti</span>
+  <span class="variable-highlight">name</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:name</span>]
+  <span class="comment-highlight"># BUG: Interpolating user-supplied variable into template string before compile</span>
+  <span class="variable-highlight">template_str</span> = <span class="string-highlight">"Hello </span><span class="variable-highlight">#{name}</span><span class="string-highlight">, present time is &lt;%= Time.now %&gt;"</span>
+  <span class="variable-highlight">renderer</span> = <span class="variable-highlight">ERB</span>.new(<span class="variable-highlight">template_str</span>)
+  <span class="variable-highlight">output</span> = <span class="variable-highlight">renderer</span>.result(binding)
+  render <span class="string-highlight">plain:</span> <span class="variable-highlight">output</span>
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">ssti</span>
+  <span class="comment-highlight"># SECURE: Pass inputs as template variables, do not concatenate into the structure</span>
+  <span class="variable-highlight">@name</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:name</span>]
+  <span class="variable-highlight">template_str</span> = <span class="string-highlight">"Hello &lt;%= @name %&gt;, present time is &lt;%= Time.now %&gt;"</span>
+  
+  <span class="variable-highlight">renderer</span> = <span class="variable-highlight">ERB</span>.new(<span class="variable-highlight">template_str</span>)
+  <span class="variable-highlight">output</span> = <span class="variable-highlight">renderer</span>.result(binding)
+  render <span class="string-highlight">plain:</span> <span class="variable-highlight">output</span>
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Never interpolate or concatenate user-supplied strings directly inside template markup structures.",
+                    "Pass user inputs as template context/instance variables (@name) which are escaped natively.",
+                    "Utilize safe templating engines (like Liquid) which sandbox dynamic execution paths."
+                ]
+            },
+            idor: {
+                title: "Insecure Direct Object Reference (IDOR)",
+                badge: "CWE-639",
+                description: "IDOR happens when an application references internal database object keys directly without checking if the current authenticated user has access rights to that record.",
+                inputLabel: "Access Note ID",
+                inputPlaceholder: "Enter note ID (ID 1 belongs to admin, ID 2 to Alice, ID 3 to Bob)",
+                defaultValue: "1",
+                icon: "fa-unlock-keyhole",
+                buttonText: "Fetch Private Note",
+                apiPath: (val) => `/api/v1/vulnerabilities/note?id=${encodeURIComponent(val)}`,
+                apiMethod: "GET",
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">note</span>
+  <span class="variable-highlight">note_id</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:id</span>]
+  <span class="comment-highlight"># BUG: Finding record directly by ID without verifying owner or access tokens</span>
+  <span class="variable-highlight">@note</span> = <span class="variable-highlight">PrivateNote</span>.find(<span class="variable-highlight">note_id</span>)
+  render <span class="string-highlight">json:</span> <span class="variable-highlight">@note</span>
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">note</span>
+  <span class="variable-highlight">note_id</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:id</span>]
+  <span class="comment-highlight"># SECURE: Scope queries through current authenticated user model</span>
+  <span class="variable-highlight">@note</span> = <span class="variable-highlight">current_user</span>.private_notes.find(<span class="variable-highlight">note_id</span>)
+  render <span class="string-highlight">json:</span> <span class="variable-highlight">@note</span>
+<span class="keyword-highlight">end</span>`,
+                remediation: [
+                    "Never fetch resources directly from global parameters (e.g. Model.find(params[:id])) without authorization.",
+                    "Always scope database queries through the logged-in user context (e.g. current_user.private_notes.find(...)).",
+                    "Use authorization libraries (like Pundit or CanCanCan) to enforce resource policies.",
+                    "Employ random UUIDs instead of auto-incrementing integer IDs to make guessing endpoints difficult."
+                ]
+            }
+        };
+
+        let currentActiveTab = 'sqli';
+
+        // Initialize Workspace with SQLi
+        document.addEventListener('DOMContentLoaded', () => {
+            renderWorkspace(currentActiveTab);
+        });
+
+        function switchTab(key) {
+            document.querySelectorAll('.nav-item').forEach(el => {
+                if (el.dataset.vuln === key) {
+                    el.classList.add('active');
+                } else {
+                    el.classList.remove('active');
+                }
+            });
+            currentActiveTab = key;
+            renderWorkspace(key);
+        }
+
+        function renderWorkspace(key) {
+            const data = vulns[key];
+            const ws = document.getElementById('vuln-workspace');
+
+            if (data.isXSSDemo) {
+                // Render custom XSS board
+                ws.innerHTML = `
+                    <div class="section-header">
+                        <span class="section-badge">${data.badge}</span>
+                        <div class="section-title">
+                            <h2>${data.title}</h2>
+                        </div>
+                    </div>
+                    <p class="section-description">${data.description}</p>
+                    
+                    <div class="playground-container">
+                        <div class="action-pane">
+                            <h3>Stored XSS Guestbook</h3>
+                            <div class="form-group">
+                                <label for="xss-author">Name/Author</label>
+                                <input type="text" id="xss-author" class="text-input" value="Hacker" style="padding-left:14px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="xss-content">Message (HTML Allowed)</label>
+                                <textarea id="xss-content" class="text-input" style="padding-left:14px; height:80px; font-family: var(--font-mono);">${CommentSeedPayload()}</textarea>
+                            </div>
+                            <button class="submit-btn" onclick="submitComment()"><i class="fa-solid fa-paper-plane"></i> Submit Comment</button>
+                        </div>
+                        
+                        <div class="console-wrapper">
+                            <div class="console-header">
+                                <span>Guestbook Board</span>
+                                <button onclick="loadComments()" style="background:none; border:none; color:var(--accent-cyan); font-size:11px; cursor:pointer;"><i class="fa-solid fa-rotate"></i> Reload</button>
+                            </div>
+                            <div class="comments-list-box" id="comments-box">
+                                <div class="console-placeholder">Loading comments...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="code-container">
+                        <div class="code-tabs">
+                            <div class="code-tab active vuln-tab">Vulnerable Client Parsing (XSS)</div>
+                            <div class="code-tab secure-tab" onclick="alert('In remediation section below!')">Secure Rendering</div>
+                        </div>
+                        <div class="code-viewport">
+                            <code><span class="comment-highlight">// Vulnerable Javascript rendering stored records:</span>
+<span class="keyword-highlight">const</span> <span class="variable-highlight">commentBody</span> = <span class="variable-highlight">document</span>.createElement(<span class="string-highlight">'div'</span>);
+<span class="comment-highlight">// BUG: Renders raw unescaped input directly into innerHTML</span>
+<span class="variable-highlight">commentBody</span>.innerHTML = <span class="variable-highlight">comment</span>.content;</code>
+                        </div>
+                    </div>
+
+                    <div class="remediation-section">
+                        <div class="remediation-header">
+                            <i class="fa-solid fa-shield-halved"></i> Remediation Guidelines
+                        </div>
+                        <ul class="remediation-list">
+                            ${data.remediation.map(item => `<li>${item}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+                loadComments();
+                return;
+            }
+
+            // Standard layout for other vulnerabilities
+            ws.innerHTML = `
+                <div class="section-header">
+                    <span class="section-badge">${data.badge}</span>
+                    <div class="section-title">
+                        <h2>${data.title}</h2>
+                    </div>
+                </div>
+                <p class="section-description">${data.description}</p>
+                
+                <div class="playground-container">
+                    <div class="action-pane">
+                        <div class="form-group">
+                            <label for="vuln-input">${data.inputLabel}</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid ${data.icon}"></i>
+                                ${getInputField(data)}
+                            </div>
+                        </div>
+                        <button class="submit-btn" id="run-btn" onclick="executeExploit('${key}')">
+                            <i class="fa-solid fa-play"></i> ${data.buttonText}
+                        </button>
+                    </div>
+                    
+                    <div class="console-wrapper">
+                        <div class="console-header">
+                            <span>Interactive API Console</span>
+                            <div class="console-dots">
+                                <span class="console-dot"></span>
+                                <span class="console-dot"></span>
+                                <span class="console-dot"></span>
+                            </div>
+                        </div>
+                        <div class="console-screen" id="console-output">
+                            <span class="console-placeholder">Waiting for payload submission...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="code-container">
+                    <div class="code-tabs">
+                        <div class="code-tab active vuln-tab" id="tab-vuln-code" onclick="toggleCodeView('vuln')">Vulnerable Code</div>
+                        <div class="code-tab secure-tab" id="tab-secure-code" onclick="toggleCodeView('secure')">Secure Implementation</div>
+                    </div>
+                    <div class="code-viewport">
+                        <code id="code-content-block">${data.codeVuln}</code>
+                    </div>
+                </div>
+
+                <div class="remediation-section">
+                    <div class="remediation-header">
+                        <i class="fa-solid fa-shield-halved"></i> Remediation Guidelines
+                    </div>
+                    <ul class="remediation-list">
+                        ${data.remediation.map(item => `<li>${item}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        function getInputField(data) {
+            if (data.defaultValue.includes('\n')) {
+                return `<textarea id="vuln-input" class="text-input" rows="4" style="padding-left:14px; font-family: var(--font-mono);">${data.defaultValue}</textarea>`;
+            }
+            return `<input type="text" id="vuln-input" class="text-input" value="${data.defaultValue}" placeholder="${data.inputPlaceholder}">`;
+        }
+
+        function CommentSeedPayload() {
+            return `<img src="x" onerror="alert('XSS Script Execution!')"> Nice application!`;
+        }
+
+        function toggleCodeView(type) {
+            const data = vulns[currentActiveTab];
+            const codeBlock = document.getElementById('code-content-block');
+            const vulnTab = document.getElementById('tab-vuln-code');
+            const secureTab = document.getElementById('tab-secure-code');
+
+            if (type === 'vuln') {
+                codeBlock.innerHTML = data.codeVuln;
+                vulnTab.classList.add('active');
+                secureTab.classList.remove('active');
+            } else {
+                codeBlock.innerHTML = data.codeSecure;
+                secureTab.classList.add('active');
+                vulnTab.classList.remove('active');
+            }
+        }
+
+        // Action executors
+        async function executeExploit(key) {
+            const val = document.getElementById('vuln-input').value;
+            const outputBox = document.getElementById('console-output');
+            const runBtn = document.getElementById('run-btn');
+
+            outputBox.classList.remove('error');
+            outputBox.innerHTML = 'Sending query to sandbox API...';
+            runBtn.disabled = true;
+
+            const data = vulns[key];
+
+            try {
+                let options = {
+                    method: data.apiMethod,
+                    headers: {}
+                };
+
+                if (data.apiMethod === "POST") {
+                    options.headers["Content-Type"] = "application/json";
+                    options.body = data.postData(val);
+                }
+
+                const url = data.apiPath(val);
+                const response = await fetch(url, options);
+
+                const text = await response.text();
+                let renderedText = text;
+
+                // Format json if applicable
+                try {
+                    const parsed = JSON.parse(text);
+                    renderedText = JSON.stringify(parsed, null, 2);
+                } catch(e) {}
+
+                if (response.ok) {
+                    outputBox.classList.remove('error');
+                    outputBox.textContent = renderedText;
+                } else {
+                    outputBox.classList.add('error');
+                    outputBox.textContent = `Error status: ${response.status}\n\n${renderedText}`;
+                }
+            } catch(err) {
+                outputBox.classList.add('error');
+                outputBox.textContent = `Fetch connection failed. Make sure the local Rails server is running.\n\nDetail: ${err.message}`;
+            } finally {
+                runBtn.disabled = false;
+            }
+        }
+
+        // Stored XSS board functions
+        async function loadComments() {
+            const commentsBox = document.getElementById('comments-box');
+            try {
+                const res = await fetch('/api/v1/vulnerabilities/comments');
+                if (!res.ok) throw new Error('API returned status ' + res.status);
+                const data = await res.json();
+                
+                commentsBox.innerHTML = '';
+                if (data.length === 0) {
+                    commentsBox.innerHTML = '<div class="console-placeholder">No comments yet.</div>';
+                    return;
+                }
+
+                data.forEach(comment => {
+                    const item = document.createElement('div');
+                    item.className = 'comment-item';
+                    
+                    const meta = document.createElement('div');
+                    meta.className = 'comment-meta';
+                    
+                    const authorSpan = document.createElement('span');
+                    authorSpan.style.fontWeight = 'bold';
+                    authorSpan.style.color = 'var(--accent-purple)';
+                    authorSpan.textContent = comment.author || 'Anonymous';
+                    
+                    const dateSpan = document.createElement('span');
+                    dateSpan.textContent = new Date(comment.created_at).toLocaleTimeString();
+                    
+                    meta.appendChild(authorSpan);
+                    meta.appendChild(dateSpan);
+                    
+                    const body = document.createElement('div');
+                    body.className = 'comment-body';
+                    // VULNERABILITY IN ACTION: innerHTML executes tags dynamically!
+                    body.innerHTML = comment.content;
+                    
+                    item.appendChild(meta);
+                    item.appendChild(body);
+                    commentsBox.appendChild(item);
+                });
+            } catch(e) {
+                commentsBox.innerHTML = `<div class="console-placeholder" style="color:var(--accent-red)">Error loading comments: ${e.message}</div>`;
+            }
+        }
+
+        async function submitComment() {
+            const author = document.getElementById('xss-author').value;
+            const content = document.getElementById('xss-content').value;
+            
+            try {
+                const res = await fetch('/api/v1/vulnerabilities/comments', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ author, content })
+                });
+                
+                if (res.ok) {
+                    loadComments();
+                } else {
+                    alert('Error submitting comment: ' + res.statusText);
+                }
+            } catch(e) {
+                alert('Connection to server failed. Make sure Rails is running.');
+            }
+        }
+    </script>
+</body>
+</html>
