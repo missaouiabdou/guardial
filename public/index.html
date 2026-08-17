@@ -609,7 +609,7 @@
         <div class="logo-container">
             <i class="fa-solid fa-shield-halved logo-icon"></i>
             <span class="logo-title">GuardiaLab</span>
-            <span class="logo-badge">Vuln</span>
+            <span class="logo-badge">7 Vulns</span>
         </div>
         <ul class="nav-list">
             <li class="nav-item active" onclick="switchTab('sqli')" data-vuln="sqli">
@@ -627,20 +627,11 @@
             <li class="nav-item" onclick="switchTab('mass_assignment')" data-vuln="mass_assignment">
                 <i class="fa-solid fa-user-pen"></i> Mass Assignment
             </li>
-            <li class="nav-item" onclick="switchTab('secrets')" data-vuln="secrets">
-                <i class="fa-solid fa-key"></i> Hardcoded Secrets
-            </li>
             <li class="nav-item" onclick="switchTab('xss')" data-vuln="xss">
                 <i class="fa-solid fa-code"></i> Cross-Site Scripting
             </li>
             <li class="nav-item" onclick="switchTab('ssrf')" data-vuln="ssrf">
                 <i class="fa-solid fa-network-wired"></i> SSRF
-            </li>
-            <li class="nav-item" onclick="switchTab('ssti')" data-vuln="ssti">
-                <i class="fa-solid fa-cubes"></i> SSTI (Template)
-            </li>
-            <li class="nav-item" onclick="switchTab('idor')" data-vuln="idor">
-                <i class="fa-solid fa-unlock-keyhole"></i> IDOR
             </li>
         </ul>
         <div class="sidebar-footer">
@@ -838,36 +829,6 @@
                     "Do not permit attributes governing privileges, status, or balances (.permit(:admin, :role, :balance) is extremely risky)."
                 ]
             },
-            secrets: {
-                title: "Hardcoded Credentials / Secrets",
-                badge: "CWE-798",
-                description: "Storing sensitive keys, passwords, or tokens in cleartext source files allows any developer, scanner, or attacker with repository access to immediately hijack external systems.",
-                inputLabel: "Retrieve Configuration Secrets",
-                inputPlaceholder: "Click button to query config parameters...",
-                defaultValue: "Request config",
-                icon: "fa-key",
-                buttonText: "Fetch Credentials",
-                apiPath: (val) => `/api/v1/vulnerabilities/secrets`,
-                apiMethod: "GET",
-                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">secrets</span>
-  <span class="comment-highlight"># BUG: Storing hardcoded third-party API secret tokens in code</span>
-  <span class="variable-highlight">aws_key_id</span> = <span class="string-highlight">"AKIAIOSFODNN7INVALIDKEY"</span>
-  <span class="variable-highlight">aws_secret_key</span> = <span class="string-highlight">"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"</span>
-  render <span class="string-highlight">json:</span> { <span class="string-highlight">key:</span> <span class="variable-highlight">aws_secret_key</span> }
-<span class="keyword-highlight">end</span>`,
-                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">secrets</span>
-  <span class="comment-highlight"># SECURE: Retrieve keys from environment variables or encrypted Rails credentials</span>
-  <span class="variable-highlight">aws_key_id</span> = <span class="variable-highlight">ENV</span>[<span class="string-highlight">'AWS_ACCESS_KEY_ID'</span>]
-  <span class="variable-highlight">aws_secret_key</span> = <span class="variable-highlight">Rails</span>.application.credentials.dig(<span class="string-highlight">:aws</span>, <span class="string-highlight">:secret_access_key</span>)
-  render <span class="string-highlight">json:</span> { <span class="string-highlight">key_length:</span> <span class="variable-highlight">aws_secret_key</span>&.length || 0 }
-<span class="keyword-highlight">end</span>`,
-                remediation: [
-                    "Never commit credentials, access keys, or API tokens to source control.",
-                    "Use environment variables (ENV['API_KEY']) or local .env files (ignored by .gitignore).",
-                    "Leverage Rails' built-in credentials management (rails credentials:edit) to encrypt secrets.",
-                    "Integrate automated pre-commit scanning tools (like git-secrets or TruffleHog) to prevent leaks."
-                ]
-            },
             xss: {
                 title: "Cross-Site Scripting (XSS)",
                 badge: "CWE-79",
@@ -885,8 +846,8 @@
                 badge: "CWE-918",
                 description: "SSRF occurs when a web server fetches a remote resource without validating the user-supplied URL. Attackers can force the server to connect to internal-only systems (e.g., localhost or cloud metadata services).",
                 inputLabel: "Remote Resource URL",
-                inputPlaceholder: "Enter target URL (e.g. http://127.0.0.1:3000/api/v1/vulnerabilities/secrets)",
-                defaultValue: "http://127.0.0.1:3000/api/v1/vulnerabilities/secrets",
+                inputPlaceholder: "Enter target URL (e.g. http://127.0.0.1:3000/api/v1/vulnerabilities/comments)",
+                defaultValue: "http://127.0.0.1:3000/api/v1/vulnerabilities/comments",
                 icon: "fa-network-wired",
                 buttonText: "Fetch URL",
                 apiPath: (val) => `/api/v1/vulnerabilities/ssrf?url=${encodeURIComponent(val)}`,
@@ -915,70 +876,6 @@
                     "Implement URL and host domain whitelisting for outgoing requests.",
                     "Verify resolved IP addresses to block connections to private / loopback IP spaces (RFC 1918: 127.0.0.1, 10.0.0.0/8, 192.168.0.0/16).",
                     "Do not allow raw protocol schemes like file:// or gopher://; strictly enforce https://."
-                ]
-            },
-            ssti: {
-                title: "Server-Side Template Injection (SSTI)",
-                badge: "CWE-1336",
-                description: "SSTI occurs when user inputs are dynamically concatenated directly into a template format string before compilation, allowing attackers to evaluate code inside the templating framework's sandbox.",
-                inputLabel: "Your Name",
-                inputPlaceholder: "Enter template input (e.g. <%= Dir.entries('.') %> or <%= 7*7 %>)",
-                defaultValue: "<%= 7*7 %>",
-                icon: "fa-cubes",
-                buttonText: "Render Template",
-                apiPath: (val) => `/api/v1/vulnerabilities/ssti?name=${encodeURIComponent(val)}`,
-                apiMethod: "GET",
-                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">ssti</span>
-  <span class="variable-highlight">name</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:name</span>]
-  <span class="comment-highlight"># BUG: Interpolating user-supplied variable into template string before compile</span>
-  <span class="variable-highlight">template_str</span> = <span class="string-highlight">"Hello </span><span class="variable-highlight">#{name}</span><span class="string-highlight">, present time is &lt;%= Time.now %&gt;"</span>
-  <span class="variable-highlight">renderer</span> = <span class="variable-highlight">ERB</span>.new(<span class="variable-highlight">template_str</span>)
-  <span class="variable-highlight">output</span> = <span class="variable-highlight">renderer</span>.result(binding)
-  render <span class="string-highlight">plain:</span> <span class="variable-highlight">output</span>
-<span class="keyword-highlight">end</span>`,
-                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">ssti</span>
-  <span class="comment-highlight"># SECURE: Pass inputs as template variables, do not concatenate into the structure</span>
-  <span class="variable-highlight">@name</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:name</span>]
-  <span class="variable-highlight">template_str</span> = <span class="string-highlight">"Hello &lt;%= @name %&gt;, present time is &lt;%= Time.now %&gt;"</span>
-  
-  <span class="variable-highlight">renderer</span> = <span class="variable-highlight">ERB</span>.new(<span class="variable-highlight">template_str</span>)
-  <span class="variable-highlight">output</span> = <span class="variable-highlight">renderer</span>.result(binding)
-  render <span class="string-highlight">plain:</span> <span class="variable-highlight">output</span>
-<span class="keyword-highlight">end</span>`,
-                remediation: [
-                    "Never interpolate or concatenate user-supplied strings directly inside template markup structures.",
-                    "Pass user inputs as template context/instance variables (@name) which are escaped natively.",
-                    "Utilize safe templating engines (like Liquid) which sandbox dynamic execution paths."
-                ]
-            },
-            idor: {
-                title: "Insecure Direct Object Reference (IDOR)",
-                badge: "CWE-639",
-                description: "IDOR happens when an application references internal database object keys directly without checking if the current authenticated user has access rights to that record.",
-                inputLabel: "Access Note ID",
-                inputPlaceholder: "Enter note ID (ID 1 belongs to admin, ID 2 to Alice, ID 3 to Bob)",
-                defaultValue: "1",
-                icon: "fa-unlock-keyhole",
-                buttonText: "Fetch Private Note",
-                apiPath: (val) => `/api/v1/vulnerabilities/note?id=${encodeURIComponent(val)}`,
-                apiMethod: "GET",
-                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">note</span>
-  <span class="variable-highlight">note_id</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:id</span>]
-  <span class="comment-highlight"># BUG: Finding record directly by ID without verifying owner or access tokens</span>
-  <span class="variable-highlight">@note</span> = <span class="variable-highlight">PrivateNote</span>.find(<span class="variable-highlight">note_id</span>)
-  render <span class="string-highlight">json:</span> <span class="variable-highlight">@note</span>
-<span class="keyword-highlight">end</span>`,
-                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">note</span>
-  <span class="variable-highlight">note_id</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:id</span>]
-  <span class="comment-highlight"># SECURE: Scope queries through current authenticated user model</span>
-  <span class="variable-highlight">@note</span> = <span class="variable-highlight">current_user</span>.private_notes.find(<span class="variable-highlight">note_id</span>)
-  render <span class="string-highlight">json:</span> <span class="variable-highlight">@note</span>
-<span class="keyword-highlight">end</span>`,
-                remediation: [
-                    "Never fetch resources directly from global parameters (e.g. Model.find(params[:id])) without authorization.",
-                    "Always scope database queries through the logged-in user context (e.g. current_user.private_notes.find(...)).",
-                    "Use authorization libraries (like Pundit or CanCanCan) to enforce resource policies.",
-                    "Employ random UUIDs instead of auto-incrementing integer IDs to make guessing endpoints difficult."
                 ]
             }
         };

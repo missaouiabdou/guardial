@@ -4,18 +4,15 @@ Rails.application.routes.draw do
 
   namespace :api do
     namespace :v1 do
-      # Vulnerabilities endpoints
+      # Exactly 7 Vulnerabilities endpoints
       get "vulnerabilities/sqli", to: "vulnerabilities#sqli"
       post "vulnerabilities/rce", to: "vulnerabilities#rce"
       get "vulnerabilities/lfi", to: "vulnerabilities#lfi"
       post "vulnerabilities/deserialize", to: "vulnerabilities#deserialize"
       post "vulnerabilities/users", to: "vulnerabilities#create_user"
-      get "vulnerabilities/secrets", to: "vulnerabilities#secrets"
       get "vulnerabilities/comments", to: "vulnerabilities#comments"
       post "vulnerabilities/comments", to: "vulnerabilities#create_comment"
       get "vulnerabilities/ssrf", to: "vulnerabilities#ssrf"
-      get "vulnerabilities/ssti", to: "vulnerabilities#ssti"
-      get "vulnerabilities/note", to: "vulnerabilities#note"
     end
   end
 end

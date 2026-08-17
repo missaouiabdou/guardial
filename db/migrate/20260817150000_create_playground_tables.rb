@@ -19,12 +19,5 @@ class CreatePlaygroundTables < ActiveRecord::Migration[8.1]
       t.text :content
       t.timestamps
     end
-
-    create_table :private_notes do |t|
-      t.string :title
-      t.text :content
-      t.references :user, null: false, foreign_key: true
-      t.timestamps
-    end
   end
 end

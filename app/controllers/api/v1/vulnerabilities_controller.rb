@@ -1,13 +1,11 @@
 require 'base64'
 require 'net/http'
-require 'erb'
 
 module Api
   module V1
     class VulnerabilitiesController < ApplicationController
-      # Disable CSRF / authorization check for this demo API
-      # Rails API m      # Rails API mode doesn't include CSRF protection by default, but we ensure it remains accessible.
-      # Rails API mode doesn't include CSRF protection by default, but we ensure it remains accessible.
+      # Disable CSRF / authorization checks for this demo API.
+      # Rails API mode doesn't include CSRF protection by default.
 
       # 1. SQL Injection (SQLi)
       # Try payload: query=Shield' OR '1'='1
@@ -17,8 +15,6 @@ module Api
         sql = "SELECT * FROM products WHERE name LIKE '%#{query}%'"
         @products = Product.connection.select_all(sql)
         render json: @products
-		
-		
       end
 
       # 2. Remote Command Execution (RCE)
@@ -80,22 +76,7 @@ module Api
         end
       end
 
-      # 6. Hardcoded Secrets / Sensitive Data Exposure
-      def secrets
-        # Vulnerable: plain-text keys hardcoded in the codebase
-        aws_key_id = "AKIAIOSFODNN7INVALIDKEY"
-        aws_secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-        github_token = "ghp_1234567890abcdefghijklmnopqrstuvwxyz"
-
-        render json: {
-          aws_key_id: aws_key_id,
-          aws_secret_key: aws_secret_key,
-          github_token: github_token,
-          warning: "Hardcoded credentials detected!"
-        }
-      end
-
-      # 7. Stored Cross-Site Scripting (XSS)
+      # 6. Stored Cross-Site Scripting (XSS)
       def comments
         @comments = Comment.all
         render json: @comments
@@ -111,8 +92,8 @@ module Api
         end
       end
 
-      # 8. Server-Side Request Forgery (SSRF)
-      # Try payload: url=http://127.0.0.1:3000/api/v1/vulnerabilities/secrets
+      # 7. Server-Side Request Forgery (SSRF)
+      # Try payload: url=http://127.0.0.1:3000/api/v1/vulnerabilities/comments
       def ssrf
         url_str = params[:url]
         if url_str.present?
@@ -128,38 +109,6 @@ module Api
         end
       rescue => e
         render json: { error: e.message }, status: :unprocessable_entity
-      end
-
-      # 9. Server-Side Template Injection (SSTI)
-      # Try payload: name=<%= Dir.entries('.') %> or name=<%= 7*7 %>
-      def ssti
-        name = params[:name] || "Guest"
-        if name.present?
-          # Vulnerable SSTI: interpolating user-supplied input into the template string before ERB compilation
-          template_str = "Hello #{name}, welcome! Present time is <%= Time.now %>."
-          renderer = ERB.new(template_str)
-          output = renderer.result(binding)
-          render plain: output
-        else
-          render json: { error: "Name parameter is missing" }, status: :bad_request
-        end
-      rescue => e
-        render json: { error: e.message }, status: :unprocessable_entity
-      end
-
-      # 10. IDOR (Insecure Direct Object Reference)
-      # Try payload: id=1 (admin note) vs id=2 (alice note)
-      def note
-        note_id = params[:id]
-        if note_id.present?
-          # Vulnerable IDOR: directly querying by ID without validating ownership or session context
-          @note = PrivateNote.find(note_id)
-          render json: @note
-        else
-          render json: { error: "ID parameter is missing" }, status: :bad_request
-        end
-      rescue ActiveRecord::RecordNotFound
-        render json: { error: "Note not found" }, status: :not_found
       end
     end
   end
