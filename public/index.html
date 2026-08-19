@@ -564,42 +564,17 @@
             font-weight: bold;
         }
 
-        /* Guestbook specific styles */
-        .comment-item {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--border-glass);
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 10px;
-            animation: fadeIn 0.4s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(5px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .comment-meta {
-            font-size: 11px;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .comment-body {
-            font-size: 13px;
-        }
-
-        .comments-list-box {
-            max-height: 240px;
-            overflow-y: auto;
+        /* Sandbox output frame */
+        .sandbox-rendered-frame {
+            background: #fff;
             border: 1px solid var(--border-glass);
             border-radius: 8px;
             padding: 12px;
-            background: #080c14;
+            color: #000;
+            margin-top: 10px;
+            max-height: 120px;
+            overflow-y: auto;
         }
-
     </style>
 </head>
 <body>
@@ -833,12 +808,28 @@
                 title: "Cross-Site Scripting (XSS)",
                 badge: "CWE-79",
                 description: "Cross-Site Scripting occurs when an application includes untrusted data in a web page without proper escaping, enabling execution of malicious javascript in the user's browser context.",
-                isXSSDemo: true, // Special UI for comment board
+                isReflectedXSS: true,
+                inputLabel: "Your Name",
+                inputPlaceholder: "Enter your name (e.g. <img src=x onerror=alert('XSS')>)",
+                defaultValue: "<img src=x onerror=alert('Reflected-XSS-Triggered')>",
                 icon: "fa-code",
+                buttonText: "Render Name",
+                apiPath: (val) => `/api/v1/vulnerabilities/xss?name=${encodeURIComponent(val)}`,
+                apiMethod: "GET",
+                codeVuln: `<span class="keyword-highlight">def</span> <span class="method-highlight">xss</span>
+  <span class="variable-highlight">name</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:name</span>] || <span class="string-highlight">"Guest"</span>
+  <span class="comment-highlight"># BUG: Rendering unescaped user parameter directly to HTML output via html_safe</span>
+  render <span class="string-highlight">html:</span> <span class="string-highlight">"&lt;h1&gt;Hello, </span><span class="variable-highlight">#{name}</span><span class="string-highlight">&lt;/h1&gt;"</span>.html_safe
+<span class="keyword-highlight">end</span>`,
+                codeSecure: `<span class="keyword-highlight">def</span> <span class="method-highlight">xss</span>
+  <span class="variable-highlight">name</span> = <span class="variable-highlight">params</span>[<span class="string-highlight">:name</span>] || <span class="string-highlight">"Guest"</span>
+  <span class="comment-highlight"># SECURE: Allow Rails to automatically HTML-escape the output</span>
+  render <span class="string-highlight">plain:</span> <span class="string-highlight">"Hello, </span><span class="variable-highlight">#{name}</span><span class="string-highlight">"</span>
+<span class="keyword-highlight">end</span>`,
                 remediation: [
                     "Always escape user inputs dynamically rendered in DOM trees.",
-                    "In frontend frameworks, use textContent or safe text rendering variables (e.g. innerText) instead of innerHTML.",
-                    "In Rails views, avoid calling html_safe or raw on arbitrary inputs."
+                    "In Rails views/controllers, avoid calling html_safe or raw on arbitrary strings containing user parameters.",
+                    "Prefer standard plain text rendering or default ERB sanitization (which escapes automatically)."
                 ]
             },
             ssrf: {
@@ -846,8 +837,8 @@
                 badge: "CWE-918",
                 description: "SSRF occurs when a web server fetches a remote resource without validating the user-supplied URL. Attackers can force the server to connect to internal-only systems (e.g., localhost or cloud metadata services).",
                 inputLabel: "Remote Resource URL",
-                inputPlaceholder: "Enter target URL (e.g. http://127.0.0.1:3000/api/v1/vulnerabilities/comments)",
-                defaultValue: "http://127.0.0.1:3000/api/v1/vulnerabilities/comments",
+                inputPlaceholder: "Enter target URL (e.g. http://127.0.0.1:3000/api/v1/vulnerabilities/xss)",
+                defaultValue: "http://127.0.0.1:3000/api/v1/vulnerabilities/xss",
                 icon: "fa-network-wired",
                 buttonText: "Fetch URL",
                 apiPath: (val) => `/api/v1/vulnerabilities/ssrf?url=${encodeURIComponent(val)}`,
@@ -903,69 +894,6 @@
             const data = vulns[key];
             const ws = document.getElementById('vuln-workspace');
 
-            if (data.isXSSDemo) {
-                // Render custom XSS board
-                ws.innerHTML = `
-                    <div class="section-header">
-                        <span class="section-badge">${data.badge}</span>
-                        <div class="section-title">
-                            <h2>${data.title}</h2>
-                        </div>
-                    </div>
-                    <p class="section-description">${data.description}</p>
-                    
-                    <div class="playground-container">
-                        <div class="action-pane">
-                            <h3>Stored XSS Guestbook</h3>
-                            <div class="form-group">
-                                <label for="xss-author">Name/Author</label>
-                                <input type="text" id="xss-author" class="text-input" value="Hacker" style="padding-left:14px;">
-                            </div>
-                            <div class="form-group">
-                                <label for="xss-content">Message (HTML Allowed)</label>
-                                <textarea id="xss-content" class="text-input" style="padding-left:14px; height:80px; font-family: var(--font-mono);">${CommentSeedPayload()}</textarea>
-                            </div>
-                            <button class="submit-btn" onclick="submitComment()"><i class="fa-solid fa-paper-plane"></i> Submit Comment</button>
-                        </div>
-                        
-                        <div class="console-wrapper">
-                            <div class="console-header">
-                                <span>Guestbook Board</span>
-                                <button onclick="loadComments()" style="background:none; border:none; color:var(--accent-cyan); font-size:11px; cursor:pointer;"><i class="fa-solid fa-rotate"></i> Reload</button>
-                            </div>
-                            <div class="comments-list-box" id="comments-box">
-                                <div class="console-placeholder">Loading comments...</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="code-container">
-                        <div class="code-tabs">
-                            <div class="code-tab active vuln-tab">Vulnerable Client Parsing (XSS)</div>
-                            <div class="code-tab secure-tab" onclick="alert('In remediation section below!')">Secure Rendering</div>
-                        </div>
-                        <div class="code-viewport">
-                            <code><span class="comment-highlight">// Vulnerable Javascript rendering stored records:</span>
-<span class="keyword-highlight">const</span> <span class="variable-highlight">commentBody</span> = <span class="variable-highlight">document</span>.createElement(<span class="string-highlight">'div'</span>);
-<span class="comment-highlight">// BUG: Renders raw unescaped input directly into innerHTML</span>
-<span class="variable-highlight">commentBody</span>.innerHTML = <span class="variable-highlight">comment</span>.content;</code>
-                        </div>
-                    </div>
-
-                    <div class="remediation-section">
-                        <div class="remediation-header">
-                            <i class="fa-solid fa-shield-halved"></i> Remediation Guidelines
-                        </div>
-                        <ul class="remediation-list">
-                            ${data.remediation.map(item => `<li>${item}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-                loadComments();
-                return;
-            }
-
-            // Standard layout for other vulnerabilities
             ws.innerHTML = `
                 <div class="section-header">
                     <span class="section-badge">${data.badge}</span>
@@ -987,6 +915,7 @@
                         <button class="submit-btn" id="run-btn" onclick="executeExploit('${key}')">
                             <i class="fa-solid fa-play"></i> ${data.buttonText}
                         </button>
+                        ${data.isReflectedXSS ? '<div id="rendered-output-box" class="sandbox-rendered-frame" style="display:none;"></div>' : ''}
                     </div>
                     
                     <div class="console-wrapper">
@@ -1032,10 +961,6 @@
             return `<input type="text" id="vuln-input" class="text-input" value="${data.defaultValue}" placeholder="${data.inputPlaceholder}">`;
         }
 
-        function CommentSeedPayload() {
-            return `<img src="x" onerror="alert('XSS Script Execution!')"> Nice application!`;
-        }
-
         function toggleCodeView(type) {
             const data = vulns[currentActiveTab];
             const codeBlock = document.getElementById('code-content-block');
@@ -1058,6 +983,12 @@
             const val = document.getElementById('vuln-input').value;
             const outputBox = document.getElementById('console-output');
             const runBtn = document.getElementById('run-btn');
+            const renderedOutputBox = document.getElementById('rendered-output-box');
+
+            if (renderedOutputBox) {
+                renderedOutputBox.style.display = 'none';
+                renderedOutputBox.innerHTML = '';
+            }
 
             outputBox.classList.remove('error');
             outputBox.innerHTML = 'Sending query to sandbox API...';
@@ -1091,6 +1022,11 @@
                 if (response.ok) {
                     outputBox.classList.remove('error');
                     outputBox.textContent = renderedText;
+                    
+                    if (data.isReflectedXSS && renderedOutputBox) {
+                        renderedOutputBox.style.display = 'block';
+                        renderedOutputBox.innerHTML = `<strong>Rendered HTML Sandbox (Executes script tags):</strong><br><div style="border-top:1px solid #ccc; padding-top:6px; margin-top:6px;">${text}</div>`;
+                    }
                 } else {
                     outputBox.classList.add('error');
                     outputBox.textContent = `Error status: ${response.status}\n\n${renderedText}`;
@@ -1100,75 +1036,6 @@
                 outputBox.textContent = `Fetch connection failed. Make sure the local Rails server is running.\n\nDetail: ${err.message}`;
             } finally {
                 runBtn.disabled = false;
-            }
-        }
-
-        // Stored XSS board functions
-        async function loadComments() {
-            const commentsBox = document.getElementById('comments-box');
-            try {
-                const res = await fetch('/api/v1/vulnerabilities/comments');
-                if (!res.ok) throw new Error('API returned status ' + res.status);
-                const data = await res.json();
-                
-                commentsBox.innerHTML = '';
-                if (data.length === 0) {
-                    commentsBox.innerHTML = '<div class="console-placeholder">No comments yet.</div>';
-                    return;
-                }
-
-                data.forEach(comment => {
-                    const item = document.createElement('div');
-                    item.className = 'comment-item';
-                    
-                    const meta = document.createElement('div');
-                    meta.className = 'comment-meta';
-                    
-                    const authorSpan = document.createElement('span');
-                    authorSpan.style.fontWeight = 'bold';
-                    authorSpan.style.color = 'var(--accent-purple)';
-                    authorSpan.textContent = comment.author || 'Anonymous';
-                    
-                    const dateSpan = document.createElement('span');
-                    dateSpan.textContent = new Date(comment.created_at).toLocaleTimeString();
-                    
-                    meta.appendChild(authorSpan);
-                    meta.appendChild(dateSpan);
-                    
-                    const body = document.createElement('div');
-                    body.className = 'comment-body';
-                    // VULNERABILITY IN ACTION: innerHTML executes tags dynamically!
-                    body.innerHTML = comment.content;
-                    
-                    item.appendChild(meta);
-                    item.appendChild(body);
-                    commentsBox.appendChild(item);
-                });
-            } catch(e) {
-                commentsBox.innerHTML = `<div class="console-placeholder" style="color:var(--accent-red)">Error loading comments: ${e.message}</div>`;
-            }
-        }
-
-        async function submitComment() {
-            const author = document.getElementById('xss-author').value;
-            const content = document.getElementById('xss-content').value;
-            
-            try {
-                const res = await fetch('/api/v1/vulnerabilities/comments', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ author, content })
-                });
-                
-                if (res.ok) {
-                    loadComments();
-                } else {
-                    alert('Error submitting comment: ' + res.statusText);
-                }
-            } catch(e) {
-                alert('Connection to server failed. Make sure Rails is running.');
             }
         }
     </script>

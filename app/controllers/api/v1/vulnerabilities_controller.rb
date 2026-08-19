@@ -76,24 +76,16 @@ module Api
         end
       end
 
-      # 6. Stored Cross-Site Scripting (XSS)
-      def comments
-        @comments = Comment.all
-        render json: @comments
-      end
-
-      def create_comment
-        # Vulnerable Stored XSS: content is saved as-is without validation/escaping
-        @comment = Comment.new(author: params[:author], content: params[:content])
-        if @comment.save
-          render json: { status: "success", comment: @comment }
-        else
-          render json: { status: "error", errors: @comment.errors.full_messages }, status: :unprocessable_entity
-        end
+      # 6. Reflected Cross-Site Scripting (XSS)
+      # Try payload: name=<script>alert('XSS')</script>
+      def xss
+        name = params[:name] || "Guest"
+        # Vulnerable Reflected XSS: rendering unescaped user parameter directly as HTML using html_safe
+        render html: "<h1>Hello, #{name}</h1>".html_safe
       end
 
       # 7. Server-Side Request Forgery (SSRF)
-      # Try payload: url=http://127.0.0.1:3000/api/v1/vulnerabilities/comments
+      # Try payload: url=http://127.0.0.1:3000/api/v1/vulnerabilities/xss
       def ssrf
         url_str = params[:url]
         if url_str.present?

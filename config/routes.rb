@@ -4,14 +4,13 @@ Rails.application.routes.draw do
 
   namespace :api do
     namespace :v1 do
-      # Exactly 7 Vulnerabilities endpoints
+      # Exactly 7 Vulnerabilities endpoints (Brakeman-detectable)
       get "vulnerabilities/sqli", to: "vulnerabilities#sqli"
       post "vulnerabilities/rce", to: "vulnerabilities#rce"
       get "vulnerabilities/lfi", to: "vulnerabilities#lfi"
       post "vulnerabilities/deserialize", to: "vulnerabilities#deserialize"
       post "vulnerabilities/users", to: "vulnerabilities#create_user"
-      get "vulnerabilities/comments", to: "vulnerabilities#comments"
-      post "vulnerabilities/comments", to: "vulnerabilities#create_comment"
+      get "vulnerabilities/xss", to: "vulnerabilities#xss"
       get "vulnerabilities/ssrf", to: "vulnerabilities#ssrf"
     end
   end
